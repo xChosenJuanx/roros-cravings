@@ -10,8 +10,12 @@ function renderCart(){cartItems.innerHTML='';if(!Object.keys(cart).length)cartIt
 document.querySelector('#cartBtn').onclick=()=>{renderCart();cartDialog.showModal()};
 document.querySelector('#checkout').onsubmit=e=>{e.preventDefault();if(!Object.keys(cart).length)return alert('Please add an item first.');const f=new FormData(e.target),[,t]=totals();let lines=["Roro's Cravings – New Order",''];Object.entries(cart).forEach(([i,n])=>lines.push(`${products[i][0]} x${n} — ${peso(products[i][1]*n)}`));lines.push('',`TOTAL: ${peso(t)}`,'',`Name: ${f.get('name')}`,`Complete Address: ${f.get('address')}`,`Contact Number: ${f.get('contact')}`,'','Please confirm my order.');document.querySelector('#summary').value=lines.join('\n');document.querySelector('#summaryWrap').hidden=false};
 document.querySelector('#copyBtn').onclick=async()=>{
-  await navigator.clipboard.writeText(document.querySelector('#summary').value);
+  await navigator.clipboard.writeText(
+    document.querySelector('#summary').value
+  );
+
   document.querySelector('#copyBtn').textContent='✓ Copied! Opening Messenger...';
-  window.open('https://m.me/RorosCravingsDigos','_blank');
+
+  window.location.href='https://m.me/RorosCravingsDigos';
 }
   if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
