@@ -12,8 +12,6 @@ document.querySelector('#checkout').onsubmit=e=>{e.preventDefault();if(!Object.k
 document.querySelector('#copyBtn').onclick=async()=>{
   await navigator.clipboard.writeText(document.querySelector('#summary').value);
   document.querySelector('#copyBtn').textContent='✓ Copied! Opening Messenger...';
-  setTimeout(()=>{
-    window.open('https://m.me/RorosCravingsDigos','_blank');
-  },500);
+  window.open('https://m.me/RorosCravingsDigos','_blank');
 }
-if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
