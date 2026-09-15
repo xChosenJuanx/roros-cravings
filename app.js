@@ -14,7 +14,7 @@ document.querySelector('#copyBtn').onclick=async()=>{
     document.querySelector('#summary').value
   );
 
-  document.querySelector('#copyBtn').textContent='✓ Copied! Opening Messenger...';
+  document.querySelector('#copyBtn').textContent='✓ Copied! Send Order via Messenger...';
 
   window.location.href='https://m.me/RorosCravingsDigos';
 }
