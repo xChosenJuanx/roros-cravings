@@ -1,2 +1,2 @@
-# roros-cravings
-Roro's Cravings Online Ordering System
+# Roro's Cravings PWA
+Mobile-first online ordering PWA for Roro's Cravings.
