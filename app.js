@@ -9,5 +9,11 @@ function update(){const[q,t]=totals();count.textContent=q;total.textContent=peso
 function renderCart(){cartItems.innerHTML='';if(!Object.keys(cart).length)cartItems.innerHTML='<p>Your cart is empty.</p>';Object.entries(cart).forEach(([i,n])=>{const p=products[i];cartItems.insertAdjacentHTML('beforeend',`<div class="cartRow"><div><strong>${p[0]}</strong><br><small>${peso(p[1])} each</small></div><div class="qty"><button onclick="change(${i},-1)">−</button><b>${n}</b><button onclick="change(${i},1)">+</button></div></div>`)});update()}
 document.querySelector('#cartBtn').onclick=()=>{renderCart();cartDialog.showModal()};
 document.querySelector('#checkout').onsubmit=e=>{e.preventDefault();if(!Object.keys(cart).length)return alert('Please add an item first.');const f=new FormData(e.target),[,t]=totals();let lines=["Roro's Cravings – New Order",''];Object.entries(cart).forEach(([i,n])=>lines.push(`${products[i][0]} x${n} — ${peso(products[i][1]*n)}`));lines.push('',`TOTAL: ${peso(t)}`,'',`Name: ${f.get('name')}`,`Complete Address: ${f.get('address')}`,`Contact Number: ${f.get('contact')}`,'','Please confirm my order.');document.querySelector('#summary').value=lines.join('\n');document.querySelector('#summaryWrap').hidden=false};
-document.querySelector('#copyBtn').onclick=async()=>{await navigator.clipboard.writeText(document.querySelector('#summary').value);document.querySelector('#copyBtn').textContent='✓ Copied!'};
+document.querySelector('#copyBtn').onclick=async()=>{
+  await navigator.clipboard.writeText(document.querySelector('#summary').value);
+  document.querySelector('#copyBtn').textContent='✓ Copied! Opening Messenger...';
+  setTimeout(()=>{
+    window.open('https://m.me/RorosCravingsDigos','_blank');
+  },500);
+}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
