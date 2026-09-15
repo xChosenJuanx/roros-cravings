@@ -1,1 +1,141 @@
-<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><meta name='theme-color' content='#111111'><link rel='manifest' href='manifest.json'><link rel='stylesheet' href='style.css'><title>Roro's Cravings</title></head><body><header><img src='assets/logo.png' alt="Roro's Cravings"><div><h1>Roro's Cravings</h1><p>Good food. Big cravings. Happy you.</p></div></header><main><section class='hero'><h2>What are you craving today?</h2><p>Choose your favorites and add them to your cart.</p></section><section id='menu' class='grid'></section></main><button id='cartBtn' class='cartBtn'>🛒 Cart <span id='count'>0</span> · <span id='total'>₱0</span></button><dialog id='cartDialog'><div class='dialogHead'><h2>Your Order</h2><button onclick='cartDialog.close()'>✕</button></div><div id='cartItems'></div><div class='grand'>Total <strong id='grand'>₱0</strong></div><form id='checkout'><h3>Checkout details</h3><input required name='name' placeholder='Name'><textarea required name='address' placeholder='Complete Address'></textarea><input required name='contact' inputmode='tel' placeholder='Contact Number'><button class='primary' type='submit'>Generate Order Summary</button></form><div id='summaryWrap' hidden><textarea id='summary' readonly></textarea><button id='copyBtn' class='primary'>Copy Order Summary</button><p class='hint'>Send the copied summary to Roro's Cravings Messenger for confirmation.</p></div></dialog><script src='app.js'></script></body></html>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+
+  <title>Roro's Cravings</title>
+</head>
+
+<body>
+
+<header>
+  <img src="assets/logo.png" alt="Roro's Cravings">
+
+  <div>
+    <h1>Roro's Cravings</h1>
+    <p>Good food. Big cravings. Happy you.</p>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <h2>What are you craving today?</h2>
+    <p>Choose your favorites and add them to your cart.</p>
+  </section>
+
+  <!-- DELIVERY LOCATION -->
+  <section class="deliveryBox">
+
+    <label for="deliveryArea">
+      <strong>📍 Select your delivery area</strong>
+    </label>
+
+    <select id="deliveryArea" required>
+      <option value="">Choose City / Municipality</option>
+      <option value="Digos City">Digos City — ₱30 Delivery</option>
+      <option value="Hagonoy">Hagonoy — ₱40 Delivery</option>
+      <option value="Padada">Padada — ₱40 Delivery</option>
+      <option value="Kiblawan">Kiblawan — ₱50 Delivery</option>
+    </select>
+
+    <p class="deliveryNote">
+      📌 <strong>Delivery Note:</strong>
+      Minimum order may apply to areas outside Digos City due to distance.
+      We’ll confirm your order and delivery availability via Messenger.
+    </p>
+
+  </section>
+
+  <!-- MENU -->
+  <section id="menu" class="grid"></section>
+
+</main>
+
+
+<!-- CART BUTTON -->
+<button id="cartBtn" class="cartBtn">
+  🛒 Cart
+  <span id="count">0</span>
+  ·
+  <span id="total">₱0</span>
+</button>
+
+
+<!-- CART / CHECKOUT -->
+<dialog id="cartDialog">
+
+  <div class="dialogHead">
+    <h2>Your Order</h2>
+    <button onclick="cartDialog.close()">✕</button>
+  </div>
+
+  <div id="cartItems"></div>
+
+  <div class="grand">
+    Total
+    <strong id="grand">₱0</strong>
+  </div>
+
+  <form id="checkout">
+
+    <h3>Checkout details</h3>
+
+    <input
+      required
+      name="name"
+      placeholder="Name"
+    >
+
+    <textarea
+      required
+      name="address"
+      placeholder="Complete Address"
+    ></textarea>
+
+    <input
+      required
+      name="contact"
+      inputmode="tel"
+      placeholder="Contact Number"
+    >
+
+    <button class="primary" type="submit">
+      Generate Order Summary
+    </button>
+
+  </form>
+
+
+  <div id="summaryWrap" hidden>
+
+    <textarea
+      id="summary"
+      readonly
+    ></textarea>
+
+    <button
+      id="copyBtn"
+      class="primary"
+    >
+      Copy Order Summary
+    </button>
+
+    <p class="hint">
+      Send the copied summary to Roro's Cravings Messenger for confirmation.
+    </p>
+
+  </div>
+
+</dialog>
+
+
+<script src="app.js"></script>
+
+</body>
+</html>
