@@ -1,4 +1,4 @@
-const CACHE = 'roros-v2';
+const CACHE = 'roros-v3';
 
 const ASSETS = [
   './',
