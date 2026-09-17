@@ -1,20 +1,20 @@
 const products = [
   ['Hungarian Sausage Rice', 120, 'assets/hungarian.png'],
   ['Samgyupsal Platter', 160, 'assets/samgyup.png'],
-  ['Soy Garlic Chicken', 100, 'assets/soy-garlic.png'],
+  ['Soy Garlic Chicken', 110, 'assets/soy-garlic.png'],
   ['Shawarma Rice', 110, 'assets/shawarma.png'],
   ['Donkatsu', 110, 'assets/donkatsu.png'],
   ['Bibimbap', 170, 'assets/bibimbap.png'],
-  ['Gochujang Glazed Chicken', 100, 'assets/gochujang.png'],
+  ['Gochujang Glazed Chicken', 110, 'assets/gochujang.png'],
   ["Chick 'N Fries", 110, 'assets/chick-fries.png']
 ];
 
 // DELIVERY FEES PER AREA
 const deliveryFees = {
-  'Digos City': 30,
-  'Hagonoy': 40,
-  'Padada': 40,
-  'Kiblawan': 50
+  'Digos City': 35,
+  'Hagonoy': 45,
+  'Padada': 45,
+  'Kiblawan': 60
 };
 
 const cart = {};
@@ -70,11 +70,14 @@ function add(i) {
 
   if (!deliveryArea.value) {
     alert('Please select your delivery area first.');
+
     deliveryArea.focus();
+
     deliveryArea.scrollIntoView({
       behavior: 'smooth',
       block: 'center'
     });
+
     return;
   }
 
@@ -198,6 +201,7 @@ document.querySelector('#checkout').onsubmit = e => {
   e.preventDefault();
 
   if (!deliveryArea.value) {
+
     cartDialog.close();
 
     alert('Please select your delivery area first.');
