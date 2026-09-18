@@ -1,141 +1,137 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111111">
-
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="style.css">
-
   <title>Roro's Cravings</title>
 </head>
-
 <body>
+  <header>
+    <img src="assets/logo.png" alt="Roro's Cravings">
+    <div class="brand">
+      <h1>Roro's Cravings</h1>
+      <p>Good food. Big cravings. Happy you.</p>
+    </div>
+    <button id="adminOpen" class="iconBtn" aria-label="Admin login">⚙️</button>
+  </header>
 
-<header>
-  <img src="assets/logo.png" alt="Roro's Cravings">
+  <nav class="tabs" aria-label="App sections">
+    <button class="tab active" data-view="shopView">🍽️ Menu</button>
+    <button class="tab" data-view="trackView">📦 Track Order</button>
+  </nav>
 
-  <div>
-    <h1>Roro's Cravings</h1>
-    <p>Good food. Big cravings. Happy you.</p>
-  </div>
-</header>
+  <main>
+    <section id="shopView" class="view active">
+      <section class="hero">
+        <h2>What are you craving today?</h2>
+        <p>Choose your favorites and we'll prepare them fresh.</p>
+      </section>
 
-<main>
+      <section class="deliveryBox">
+        <label for="deliveryArea"><strong>📍 Select your delivery area</strong></label>
+        <select id="deliveryArea" required>
+          <option value="">Choose City / Municipality</option>
+          <option value="Digos City">Digos City — ₱35 Delivery</option>
+          <option value="Hagonoy">Hagonoy — ₱45 Delivery</option>
+          <option value="Padada">Padada — ₱45 Delivery</option>
+          <option value="Kiblawan">Kiblawan — ₱60 Delivery</option>
+        </select>
+        <p class="deliveryNote">📌 Orders outside Digos City may require a minimum order. We will confirm availability.</p>
+      </section>
 
-  <section class="hero">
-    <h2>What are you craving today?</h2>
-    <p>Choose your favorites and add them to your cart.</p>
-  </section>
+      <section id="menu" class="grid"><p class="loading">Loading menu…</p></section>
+    </section>
 
-  <!-- DELIVERY LOCATION -->
-  <section class="deliveryBox">
+    <section id="trackView" class="view panelPage">
+      <div class="panel">
+        <h2>📦 Track your order</h2>
+        <p class="muted">Enter the Order ID shown after checkout.</p>
+        <form id="trackForm">
+          <input id="trackId" required autocomplete="off" placeholder="Example: RC-ABC123">
+          <button class="primary" type="submit">Check Status</button>
+        </form>
+        <div id="trackResult" class="result" hidden></div>
+      </div>
+    </section>
 
-    <label for="deliveryArea">
-      <strong>📍 Select your delivery area</strong>
-    </label>
+    <section id="adminView" class="view panelPage">
+      <div class="adminTop">
+        <div><h2>Admin Dashboard</h2><p id="adminEmail" class="muted"></p></div>
+        <button id="logoutBtn" class="secondary">Log out</button>
+      </div>
 
-    <select id="deliveryArea" required>
-      <option value="">Choose City / Municipality</option>
-      <option value="Digos City">Digos City — ₱35 Delivery</option>
-      <option value="Hagonoy">Hagonoy — ₱45 Delivery</option>
-      <option value="Padada">Padada — ₱45 Delivery</option>
-      <option value="Kiblawan">Kiblawan — ₱60 Delivery</option>
-    </select>
+      <div class="adminTabs">
+        <button class="adminTab active" data-admin="ordersPanel">Orders</button>
+        <button class="adminTab" data-admin="menuPanel">Menu Editor</button>
+      </div>
 
-    <p class="deliveryNote">
-      📌 <strong>Delivery Note:</strong>
-      Minimum order may apply to areas outside Digos City due to distance.
-      We’ll confirm your order and delivery availability via Messenger.
-    </p>
+      <section id="ordersPanel" class="adminPanel active">
+        <div class="dashboardStats"><span id="pendingCount">0 Pending</span><button id="refreshOrders" class="secondary">↻ Refresh</button></div>
+        <div id="ordersList" class="ordersList"><p class="loading">Loading orders…</p></div>
+      </section>
 
-  </section>
+      <section id="menuPanel" class="adminPanel">
+        <div class="panel compact">
+          <h3>Add / Edit Product</h3>
+          <form id="productForm">
+            <input type="hidden" name="id">
+            <input required name="name" placeholder="Food name">
+            <input required name="price" type="number" min="1" step="1" placeholder="Price">
+            <input required name="image" placeholder="Image path or URL (e.g. assets/food.png)">
+            <label class="check"><input name="available" type="checkbox" checked> Available</label>
+            <div class="buttonRow"><button class="primary" type="submit">Save Product</button><button id="cancelEdit" class="secondary" type="button">Clear</button></div>
+          </form>
+        </div>
+        <div id="adminProducts" class="productAdminList"></div>
+      </section>
+    </section>
+  </main>
 
-  <!-- MENU -->
-  <section id="menu" class="grid"></section>
+  <button id="cartBtn" class="cartBtn">🛒 Cart <span id="count">0</span> · <span id="total">₱0</span></button>
 
-</main>
+  <dialog id="cartDialog">
+    <div class="dialogHead"><h2>Your Order</h2><button class="closeDialog" aria-label="Close">✕</button></div>
+    <div id="cartItems"></div>
+    <div class="totalsBox">
+      <div><span>Subtotal</span><b id="subtotalText">₱0</b></div>
+      <div><span>Delivery</span><b id="deliveryText">₱0</b></div>
+      <div class="grand"><span>Total</span><strong id="grand">₱0</strong></div>
+    </div>
+    <form id="checkout">
+      <h3>Checkout details</h3>
+      <input required name="name" maxlength="80" placeholder="Name">
+      <textarea required name="address" maxlength="300" placeholder="Complete Address"></textarea>
+      <input required name="contact" maxlength="20" inputmode="tel" placeholder="Contact Number">
+      <select required name="payment" id="paymentMethod">
+        <option value="">Select payment method</option>
+        <option value="COD">Cash on Delivery (COD)</option>
+        <option value="GCash">GCash</option>
+      </select>
+      <div id="gcashInfo" class="gcashInfo" hidden><b>GCash: 09272995716</b><br>Account Name: Fedelina Perez<br><small>Please keep your payment reference or screenshot.</small></div>
+      <textarea name="notes" maxlength="250" placeholder="Order notes (optional)"></textarea>
+      <button id="placeOrderBtn" class="primary" type="submit">Place Order</button>
+    </form>
+    <div id="orderSuccess" class="successBox" hidden></div>
+  </dialog>
 
+  <dialog id="loginDialog" class="smallDialog">
+    <div class="dialogHead"><h2>Admin Login</h2><button class="closeLogin" aria-label="Close">✕</button></div>
+    <form id="loginForm">
+      <input required name="email" type="email" autocomplete="username" placeholder="Admin email">
+      <input required name="password" type="password" autocomplete="current-password" placeholder="Password">
+      <button class="primary" type="submit">Log in</button>
+      <p id="loginError" class="error" hidden></p>
+    </form>
+  </dialog>
 
-<!-- CART BUTTON -->
-<button id="cartBtn" class="cartBtn">
-  🛒 Cart
-  <span id="count">0</span>
-  ·
-  <span id="total">₱0</span>
-</button>
+  <div id="toast" class="toast" hidden></div>
 
-
-<!-- CART / CHECKOUT -->
-<dialog id="cartDialog">
-
-  <div class="dialogHead">
-    <h2>Your Order</h2>
-    <button onclick="cartDialog.close()">✕</button>
-  </div>
-
-  <div id="cartItems"></div>
-
-  <div class="grand">
-    Total
-    <strong id="grand">₱0</strong>
-  </div>
-
-  <form id="checkout">
-
-    <h3>Checkout details</h3>
-
-    <input
-      required
-      name="name"
-      placeholder="Name"
-    >
-
-    <textarea
-      required
-      name="address"
-      placeholder="Complete Address"
-    ></textarea>
-
-    <input
-      required
-      name="contact"
-      inputmode="tel"
-      placeholder="Contact Number"
-    >
-
-    <button class="primary" type="submit">
-      Generate Order Summary
-    </button>
-
-  </form>
-
-
-  <div id="summaryWrap" hidden>
-
-    <textarea
-      id="summary"
-      readonly
-    ></textarea>
-
-    <button
-      id="copyBtn"
-      class="primary"
-    >
-      Copy Order Summary
-    </button>
-
-    <p class="hint">
-      Send the copied summary to Roro's Cravings Messenger for confirmation.
-    </p>
-
-  </div>
-
-</dialog>
-
-
-<script src="app.js"></script>
-
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
