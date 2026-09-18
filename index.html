@@ -141,6 +141,15 @@
     </form>
   </dialog>
 
+  <dialog id="chatDialog" class="chatDialog">
+    <div class="dialogHead"><div><h2>Order Chat</h2><small id="chatOrderId" class="muted"></small></div><button class="closeChat" aria-label="Close">✕</button></div>
+    <div id="chatMessages" class="chatMessages"><p class="loading">Loading messages…</p></div>
+    <form id="chatForm" class="chatForm">
+      <input id="chatInput" maxlength="500" autocomplete="off" placeholder="Type your message…" required>
+      <button class="primary" type="submit">Send</button>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" hidden></div>
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>

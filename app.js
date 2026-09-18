@@ -12,7 +12,7 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 const ADMIN_EMAIL = 'solidtagasogid26@gmail.com';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
-const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed'];
+const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const nativePlugins = window.Capacitor?.Plugins || {};
 const FirebaseAuthentication = nativePlugins.FirebaseAuthentication;
 const PushNotifications = nativePlugins.PushNotifications;
@@ -21,6 +21,8 @@ let pushStartedForUid = null;
 let cachedOrders = [];
 let currentOrderFilter = 'Pending';
 let deliveryLocation = null;
+let currentChatOrderId = null;
+let unsubscribeChat = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true },
@@ -318,9 +320,86 @@ $('#trackForm').addEventListener('submit', async event => {
     result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3><div class="statusBadge">${escapeHtml(data.status)}</div>
       <div class="timeline">${STATUSES.slice(0, 5).map((s, i) => `<div class="timelineStep ${i <= step && step < 5 ? 'done' : ''}"><span></span>${s}</div>`).join('')}</div>
       <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
+    if (auth.currentUser) {
+      try {
+        const orderDoc = await db.collection('orders').doc(id).get();
+        const order = orderDoc.data();
+        const allowed = orderDoc.exists && (order.userId === auth.currentUser.uid || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL);
+        if (allowed) {
+          result.insertAdjacentHTML('beforeend', `<button id="customerChatBtn" class="primary chatLaunch">💬 Chat with Roro's Cravings</button>`);
+          $('#customerChatBtn').addEventListener('click', () => openOrderChat(id));
+        }
+      } catch (chatAccessError) {
+        console.debug('Chat unavailable for this account', chatAccessError);
+      }
+    }
   } catch (error) {
     console.error(error);
     result.innerHTML = '<p class="error">Unable to check right now. Please try again.</p>';
+  }
+});
+
+function closeOrderChat() {
+  if (unsubscribeChat) unsubscribeChat();
+  unsubscribeChat = null;
+  currentChatOrderId = null;
+  $('#chatDialog').close();
+}
+
+async function openOrderChat(orderId) {
+  if (!auth.currentUser) {
+    $('#customerDialog').showModal();
+    return toast('Please sign in before opening chat.');
+  }
+  if (unsubscribeChat) unsubscribeChat();
+  currentChatOrderId = orderId;
+  $('#chatOrderId').textContent = orderId;
+  $('#chatMessages').innerHTML = '<p class="loading">Loading messages…</p>';
+  $('#chatDialog').showModal();
+  unsubscribeChat = db.collection('orders').doc(orderId).collection('messages')
+    .orderBy('createdAt', 'asc').limit(100)
+    .onSnapshot(snapshot => {
+      const box = $('#chatMessages');
+      box.innerHTML = snapshot.empty ? '<p class="emptyChat">No messages yet. Start the conversation.</p>' : snapshot.docs.map(doc => {
+        const message = doc.data();
+        const mine = message.senderId === auth.currentUser?.uid;
+        return `<div class="chatBubble ${mine ? 'mine' : 'theirs'}"><b>${escapeHtml(message.senderName || (message.senderRole === 'admin' ? "Roro's Cravings" : 'Customer'))}</b><p>${escapeHtml(message.text)}</p><small>${escapeHtml(timestampText(message.createdAt))}</small></div>`;
+      }).join('');
+      box.scrollTop = box.scrollHeight;
+    }, error => {
+      console.error(error);
+      $('#chatMessages').innerHTML = '<p class="error">Chat could not load. Please try again.</p>';
+    });
+}
+
+$('.closeChat').addEventListener('click', closeOrderChat);
+$('#chatDialog').addEventListener('close', () => {
+  if (unsubscribeChat) unsubscribeChat();
+  unsubscribeChat = null;
+  currentChatOrderId = null;
+});
+$('#chatForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const text = $('#chatInput').value.trim();
+  const user = auth.currentUser;
+  if (!text || !currentChatOrderId || !user) return;
+  const button = event.target.querySelector('button');
+  button.disabled = true;
+  try {
+    await db.collection('orders').doc(currentChatOrderId).collection('messages').add({
+      text,
+      senderId: user.uid,
+      senderName: user.email?.toLowerCase() === ADMIN_EMAIL ? "Roro's Cravings" : (user.displayName || 'Customer'),
+      senderRole: user.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'customer',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    $('#chatInput').value = '';
+  } catch (error) {
+    console.error(error);
+    toast('Unable to send message.');
+  } finally {
+    button.disabled = false;
+    $('#chatInput').focus();
   }
 });
 
@@ -409,10 +488,12 @@ function renderOrders() {
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
       ${order.status === 'Completed' ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>` : ''}
     </article>`).join('') : `<p class="emptyCategory">No ${escapeHtml(currentOrderFilter.toLowerCase())} orders.</p>`;
   document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
+  document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
 }
 
 async function loadOrders() {

@@ -19,6 +19,14 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    match /orders/{orderId}/messages/{messageId} {
+      allow read, create: if isAdmin() || (
+        signedIn() &&
+        get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid
+      );
+      allow update, delete: if false;
+    }
+
     match /tracking/{trackingId} {
       allow get: if true;
       allow list: if isAdmin();
