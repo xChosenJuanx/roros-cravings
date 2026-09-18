@@ -49,6 +49,24 @@ jobs:
       - name: Create Android project
         run: npx cap add android
 
+      - name: Generate Roro's launcher icon
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26
+          while IFS=: read -r folder size; do
+            mkdir -p "android/app/src/main/res/mipmap-$folder"
+            convert assets/logo.png -resize "${size}x${size}" -background transparent -gravity center -extent "${size}x${size}" "android/app/src/main/res/mipmap-$folder/ic_launcher.png"
+            cp "android/app/src/main/res/mipmap-$folder/ic_launcher.png" "android/app/src/main/res/mipmap-$folder/ic_launcher_round.png"
+          done <<'SIZES'
+          mdpi:48
+          hdpi:72
+          xhdpi:96
+          xxhdpi:144
+          xxxhdpi:192
+          SIZES
+
       - name: Build debug APK
         run: |
           chmod +x android/gradlew
