@@ -12,6 +12,7 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 const ADMIN_EMAIL = 'solidtagasogid26@gmail.com';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
+const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed'];
 const nativePlugins = window.Capacitor?.Plugins || {};
 const FirebaseAuthentication = nativePlugins.FirebaseAuthentication;
 const PushNotifications = nativePlugins.PushNotifications;
@@ -374,9 +375,9 @@ $('#refreshOrders').addEventListener('click', loadOrders);
 
 function renderOrderCategories() {
   const filters = $('#orderStatusFilters');
-  filters.innerHTML = STATUSES.map(status => {
+  filters.innerHTML = ORDER_TABS.map(status => {
     const count = cachedOrders.filter(order => order.status === status).length;
-    return `<button class="orderFilter ${currentOrderFilter === status ? 'active' : ''}" data-order-filter="${escapeHtml(status)}">${escapeHtml(status)} <span>${count}</span></button>`;
+    return `<button class="orderFilter ${currentOrderFilter === status ? 'active' : ''}" data-order-filter="${escapeHtml(status)}"><b>${escapeHtml(status.toUpperCase())}</b><span>${count}</span></button>`;
   }).join('');
   document.querySelectorAll('[data-order-filter]').forEach(button => button.addEventListener('click', () => {
     currentOrderFilter = button.dataset.orderFilter;
@@ -392,14 +393,18 @@ function renderOrders() {
   const pendingCount = cachedOrders.filter(order => order.status === 'Pending').length;
   $('#pendingCount').textContent = `${pendingCount} Pending`;
   $('#categorySummary').innerHTML = currentOrderFilter === 'Completed'
-    ? `<strong>${completedOrders.length} Completed Orders</strong><strong>Total Sales: ${peso(completedSales)}</strong>`
+    ? `<div><small>COMPLETED ORDERS</small><strong>${completedOrders.length}</strong></div><div><small>TOTAL COMPLETED SALES</small><strong>${peso(completedSales)}</strong></div>`
     : `<strong>${visibleOrders.length} ${escapeHtml(currentOrderFilter)} Orders</strong>`;
 
   $('#ordersList').innerHTML = visibleOrders.length ? visibleOrders.map(order => `
     <article class="orderCard">
       <div class="orderHead"><div><b>${escapeHtml(order.orderId || order.id)}</b><small>${escapeHtml(timestampText(order.createdAt))}</small></div><span class="statusBadge">${escapeHtml(order.status)}</span></div>
       <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}<br>${escapeHtml(order.address)}<br>Digos City · ${escapeHtml(order.paymentMethod)}</p>
-      ${order.deliveryLocation?.latitude && order.deliveryLocation?.longitude ? `<a class="mapButton" href="https://www.google.com/maps?q=${encodeURIComponent(order.deliveryLocation.latitude)},${encodeURIComponent(order.deliveryLocation.longitude)}" target="_blank" rel="noopener">📍 Open Customer Location</a>` : '<p class="locationMissing">No GPS pin shared — use the written address.</p>'}
+      ${order.status === 'Out for Delivery'
+        ? (order.deliveryLocation?.latitude && order.deliveryLocation?.longitude
+          ? `<a class="mapButton trackerButton" href="https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.deliveryLocation.latitude)},${encodeURIComponent(order.deliveryLocation.longitude)}" target="_blank" rel="noopener">🧭 NAVIGATE TO CUSTOMER LOCATION</a>`
+          : '<p class="locationMissing">⚠️ Customer did not share a GPS pin. Use the complete written address.</p>')
+        : ''}
       <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>
