@@ -1,0 +1,6 @@
+{
+  "appId": "com.roroscravings.digos",
+  "appName": "Roro's Cravings",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
