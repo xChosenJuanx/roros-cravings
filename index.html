@@ -15,6 +15,7 @@
       <h1>Roro's Cravings</h1>
       <p>Good food. Big cravings. Happy you.</p>
     </div>
+    <button id="customerOpen" class="accountBtn" aria-label="Customer account">Sign in</button>
     <button id="adminOpen" class="iconBtn" aria-label="Admin login">⚙️</button>
   </header>
 
@@ -115,6 +116,20 @@
       <button id="placeOrderBtn" class="primary" type="submit">Place Order</button>
     </form>
     <div id="orderSuccess" class="successBox" hidden></div>
+  </dialog>
+
+  <dialog id="customerDialog" class="smallDialog">
+    <div class="dialogHead"><h2>Your Account</h2><button class="closeCustomer" aria-label="Close">✕</button></div>
+    <div id="customerSignedOut">
+      <p class="muted">Sign in with Google to order, save your account, and receive order updates.</p>
+      <button id="googleLoginBtn" class="googleButton" type="button">G&nbsp; Continue with Google</button>
+      <p id="customerLoginError" class="error" hidden></p>
+    </div>
+    <div id="customerSignedIn" hidden>
+      <p>Signed in as <strong id="customerName"></strong></p>
+      <p id="customerEmail" class="muted"></p>
+      <button id="customerLogoutBtn" class="secondary" type="button">Log out</button>
+    </div>
   </dialog>
 
   <dialog id="loginDialog" class="smallDialog">

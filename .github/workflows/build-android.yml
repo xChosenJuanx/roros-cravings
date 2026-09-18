@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Signed Android APK
 
 on:
   workflow_dispatch:
@@ -13,6 +13,8 @@ on:
       - "assets/**"
       - "package.json"
       - "capacitor.config.json"
+      - "google-services.json"
+      - "firestore.rules"
       - ".github/workflows/build-android.yml"
 
 permissions:
@@ -36,7 +38,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install Android wrapper
+      - name: Install dependencies
         run: npm install
 
       - name: Prepare web app
@@ -48,6 +50,36 @@ jobs:
 
       - name: Create Android project
         run: npx cap add android
+
+      - name: Add Firebase Android configuration
+        run: cp google-services.json android/app/google-services.json
+
+      - name: Configure permanent release signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/roros-cravings-release.jks
+          cat > android/app/signing.gradle <<'GRADLE'
+          android {
+            signingConfigs {
+              rorosRelease {
+                storeFile file("roros-cravings-release.jks")
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias "roroscravings"
+                keyPassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+              }
+            }
+            buildTypes {
+              release {
+                signingConfig signingConfigs.rorosRelease
+                minifyEnabled false
+              }
+            }
+          }
+          GRADLE
+          printf "\napply from: 'signing.gradle'\n" >> android/app/build.gradle
 
       - name: Generate Roro's launcher icon
         shell: bash
@@ -67,15 +99,21 @@ jobs:
           xxxhdpi:192
           SIZES
 
-      - name: Build debug APK
+      - name: Build signed release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
-      - name: Upload APK
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk Roros-Cravings-v3-signed.apk
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: Roros-Cravings-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Roros-Cravings-v3-Signed-APK
+          path: Roros-Cravings-v3-signed.apk
           if-no-files-found: error
+          retention-days: 30

@@ -12,6 +12,11 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 const ADMIN_EMAIL = 'solidtagasogid26@gmail.com';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
+const nativePlugins = window.Capacitor?.Plugins || {};
+const FirebaseAuthentication = nativePlugins.FirebaseAuthentication;
+const PushNotifications = nativePlugins.PushNotifications;
+let currentUser = null;
+let pushStartedForUid = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true },
@@ -138,6 +143,72 @@ $('#cartBtn').addEventListener('click', () => { renderCart(); $('#cartDialog').s
 $('.closeDialog').addEventListener('click', () => $('#cartDialog').close());
 $('#paymentMethod').addEventListener('change', e => { $('#gcashInfo').hidden = e.target.value !== 'GCash'; });
 
+$('#customerOpen').addEventListener('click', () => $('#customerDialog').showModal());
+$('.closeCustomer').addEventListener('click', () => $('#customerDialog').close());
+$('#customerLogoutBtn').addEventListener('click', async () => {
+  await auth.signOut();
+  if (FirebaseAuthentication) await FirebaseAuthentication.signOut().catch(() => {});
+});
+
+$('#googleLoginBtn').addEventListener('click', async () => {
+  const button = $('#googleLoginBtn');
+  $('#customerLoginError').hidden = true;
+  button.disabled = true;
+  button.textContent = 'Signing in…';
+  try {
+    let credential;
+    if (FirebaseAuthentication) {
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      const idToken = result.credential?.idToken;
+      const accessToken = result.credential?.accessToken;
+      if (!idToken) throw new Error('Google did not return a sign-in token.');
+      credential = firebase.auth.GoogleAuthProvider.credential(idToken, accessToken || null);
+      await auth.signInWithCredential(credential);
+    } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await auth.signInWithPopup(provider);
+    }
+    $('#customerDialog').close();
+  } catch (error) {
+    console.error(error);
+    $('#customerLoginError').textContent = error.message?.replace('Firebase: ', '') || 'Google sign-in failed.';
+    $('#customerLoginError').hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'G  Continue with Google';
+  }
+});
+
+async function registerPushFor(user) {
+  if (!PushNotifications || !user || pushStartedForUid === user.uid) return;
+  pushStartedForUid = user.uid;
+  try {
+    let permission = await PushNotifications.checkPermissions();
+    if (permission.receive === 'prompt') permission = await PushNotifications.requestPermissions();
+    if (permission.receive !== 'granted') return;
+    await PushNotifications.removeAllListeners();
+    await PushNotifications.addListener('registration', async token => {
+      const tokenId = token.value.replace(/[^A-Za-z0-9_-]/g, '_');
+      await db.collection('deviceTokens').doc(tokenId).set({
+        token: token.value,
+        uid: user.uid,
+        email: user.email || '',
+        role: user.email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'customer',
+        platform: 'android',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+    await PushNotifications.addListener('registrationError', error => console.error('Push registration failed', error));
+    await PushNotifications.addListener('pushNotificationActionPerformed', () => {
+      if (user.email?.toLowerCase() === ADMIN_EMAIL) showView('adminView');
+      else showView('trackView');
+    });
+    await PushNotifications.register();
+  } catch (error) {
+    console.error('Push setup failed', error);
+  }
+}
+
 function makeOrderId() {
   return 'RC-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
@@ -147,6 +218,11 @@ $('#checkout').addEventListener('submit', async event => {
   if (!$('#deliveryArea').value) return toast('Select a delivery area first.');
   const t = totals();
   if (!t.quantity) return toast('Please add an item first.');
+  if (!auth.currentUser || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL) {
+    $('#cartDialog').close();
+    $('#customerDialog').showModal();
+    return toast('Please sign in with Google before ordering.');
+  }
 
   const form = new FormData(event.target);
   const orderId = makeOrderId();
@@ -156,6 +232,8 @@ $('#checkout').addEventListener('submit', async event => {
   });
   const order = {
     orderId,
+    userId: auth.currentUser.uid,
+    customerEmail: auth.currentUser.email || '',
     customerName: String(form.get('name')).trim(),
     address: String(form.get('address')).trim(),
     contact: String(form.get('contact')).trim(),
@@ -236,8 +314,27 @@ $('#loginForm').addEventListener('submit', async event => {
   }
 });
 
-auth.onAuthStateChanged(user => {
-  if (user && user.email.toLowerCase() === ADMIN_EMAIL) {
+auth.onAuthStateChanged(async user => {
+  currentUser = user;
+  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
+  $('#customerSignedOut').hidden = Boolean(user);
+  $('#customerSignedIn').hidden = !user;
+  $('#customerOpen').textContent = user ? (isAdmin ? 'Admin' : (user.displayName?.split(' ')[0] || 'Account')) : 'Sign in';
+  if (user) {
+    $('#customerName').textContent = user.displayName || (isAdmin ? 'Administrator' : 'Customer');
+    $('#customerEmail').textContent = user.email || '';
+    await db.collection('users').doc(user.uid).set({
+      displayName: user.displayName || '',
+      email: user.email || '',
+      photoURL: user.photoURL || '',
+      role: isAdmin ? 'admin' : 'customer',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch(console.error);
+    registerPushFor(user);
+  } else {
+    pushStartedForUid = null;
+  }
+  if (isAdmin) {
     $('#adminEmail').textContent = user.email;
     showView('adminView');
     loadOrders();

@@ -2,5 +2,20 @@
   "appId": "com.roroscravings.digos",
   "appName": "Roro's Cravings",
   "webDir": "www",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": [
+        "google.com"
+      ]
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
 }
