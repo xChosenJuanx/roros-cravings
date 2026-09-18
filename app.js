@@ -361,8 +361,10 @@ async function loadOrders() {
         ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
         <div class="orderTotal">Total: ${peso(order.total)}</div>
         <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+        ${order.status === 'Completed' ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>` : ''}
       </article>`).join('') : '<p>No orders yet.</p>';
     document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
+    document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
   } catch (error) {
     console.error(error);
     $('#ordersList').innerHTML = `<p class="error">Unable to load orders: ${escapeHtml(error.message)}</p>`;
@@ -379,6 +381,27 @@ async function updateOrderStatus(orderId, status) {
     toast(`Order marked ${status}`);
     loadOrders();
   } catch (error) { console.error(error); toast('Status update failed.'); }
+}
+
+async function deleteCompletedOrder(orderId) {
+  if (!confirm(`Permanently delete completed order ${orderId}? This cannot be undone.`)) return;
+  try {
+    const orderRef = db.collection('orders').doc(orderId);
+    const orderDoc = await orderRef.get();
+    if (!orderDoc.exists || orderDoc.data().status !== 'Completed') {
+      toast('Only completed orders can be deleted.');
+      return;
+    }
+    const batch = db.batch();
+    batch.delete(orderRef);
+    batch.delete(db.collection('tracking').doc(orderId));
+    await batch.commit();
+    toast('Completed order deleted.');
+    loadOrders();
+  } catch (error) {
+    console.error(error);
+    toast('Unable to delete order.');
+  }
 }
 
 function renderAdminProducts() {
