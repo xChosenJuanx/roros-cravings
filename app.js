@@ -10,6 +10,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
+const storage = firebase.storage();
 const ADMIN_EMAIL = 'solidtagasogid26@gmail.com';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
@@ -23,16 +24,17 @@ let currentOrderFilter = 'Pending';
 let deliveryLocation = null;
 let currentChatOrderId = null;
 let unsubscribeChat = null;
+let currentMenuCategory = 'Mains';
 
 const fallbackProducts = [
-  { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true },
-  { id: 'samgyup', name: 'Samgyupsal Platter', price: 160, image: 'assets/samgyup.png', available: true },
-  { id: 'soy-garlic', name: 'Soy Garlic Chicken', price: 110, image: 'assets/soy-garlic.png', available: true },
-  { id: 'shawarma', name: 'Shawarma Rice', price: 110, image: 'assets/shawarma.png', available: true },
-  { id: 'donkatsu', name: 'Donkatsu', price: 110, image: 'assets/donkatsu.png', available: true },
-  { id: 'bibimbap', name: 'Bibimbap', price: 170, image: 'assets/bibimbap.png', available: true },
-  { id: 'gochujang', name: 'Gochujang Glazed Chicken', price: 110, image: 'assets/gochujang.png', available: true },
-  { id: 'chick-fries', name: "Chick 'N Fries", price: 110, image: 'assets/chick-fries.png', available: true }
+  { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
+  { id: 'samgyup', name: 'Samgyupsal Platter', price: 160, image: 'assets/samgyup.png', available: true, category: 'Mains' },
+  { id: 'soy-garlic', name: 'Soy Garlic Chicken', price: 110, image: 'assets/soy-garlic.png', available: true, category: 'Mains' },
+  { id: 'shawarma', name: 'Shawarma Rice', price: 110, image: 'assets/shawarma.png', available: true, category: 'Mains' },
+  { id: 'donkatsu', name: 'Donkatsu', price: 110, image: 'assets/donkatsu.png', available: true, category: 'Mains' },
+  { id: 'bibimbap', name: 'Bibimbap', price: 170, image: 'assets/bibimbap.png', available: true, category: 'Mains' },
+  { id: 'gochujang', name: 'Gochujang Glazed Chicken', price: 110, image: 'assets/gochujang.png', available: true, category: 'Mains' },
+  { id: 'chick-fries', name: "Chick 'N Fries", price: 110, image: 'assets/chick-fries.png', available: true, category: 'Mains' }
 ];
 
 const DIGOS_DELIVERY_FEE = 35;
@@ -81,7 +83,7 @@ async function loadProducts() {
 }
 
 function renderMenu() {
-  const available = products.filter(p => p.available !== false);
+  const available = products.filter(p => p.available !== false && (p.category || 'Mains') === currentMenuCategory);
   $('#menu').innerHTML = available.length ? available.map(p => `
     <article class="card">
       <img src="${escapeHtml(safeImage(p.image))}" alt="${escapeHtml(p.name)}" onerror="this.src='assets/logo.png'">
@@ -90,6 +92,11 @@ function renderMenu() {
     </article>`).join('') : '<p>No available products right now.</p>';
   document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => add(btn.dataset.add)));
 }
+document.querySelectorAll('[data-menu-category]').forEach(button => button.addEventListener('click', () => {
+  currentMenuCategory = button.dataset.menuCategory;
+  document.querySelectorAll('[data-menu-category]').forEach(item => item.classList.toggle('active', item === button));
+  renderMenu();
+}));
 
 function getProduct(id) { return products.find(p => p.id === id); }
 function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
@@ -210,6 +217,7 @@ async function registerPushFor(user) {
   if (!PushNotifications || !user || pushStartedForUid === user.uid) return;
   pushStartedForUid = user.uid;
   try {
+    await PushNotifications.createChannel({id:'roros_orders',name:"Roro's Cravings Alerts",description:'New orders, chats, and order status updates',importance:5,visibility:1,vibration:true}).catch(()=>{});
     let permission = await PushNotifications.checkPermissions();
     if (permission.receive === 'prompt') permission = await PushNotifications.requestPermissions();
     if (permission.receive !== 'granted') return;
@@ -489,7 +497,7 @@ function renderOrders() {
       <div class="orderTotal">Total: ${peso(order.total)}</div>
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
-      ${order.status === 'Completed' ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>` : ''}
+      ${['Completed', 'Cancelled'].includes(order.status) ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete ${escapeHtml(order.status)} Order</button>` : ''}
     </article>`).join('') : `<p class="emptyCategory">No ${escapeHtml(currentOrderFilter.toLowerCase())} orders.</p>`;
   document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
@@ -521,19 +529,19 @@ async function updateOrderStatus(orderId, status) {
 }
 
 async function deleteCompletedOrder(orderId) {
-  if (!confirm(`Permanently delete completed order ${orderId}? This cannot be undone.`)) return;
+  if (!confirm(`Permanently delete this closed order ${orderId}? This cannot be undone.`)) return;
   try {
     const orderRef = db.collection('orders').doc(orderId);
     const orderDoc = await orderRef.get();
-    if (!orderDoc.exists || orderDoc.data().status !== 'Completed') {
-      toast('Only completed orders can be deleted.');
+    if (!orderDoc.exists || !['Completed', 'Cancelled'].includes(orderDoc.data().status)) {
+      toast('Only completed or cancelled orders can be deleted.');
       return;
     }
     const batch = db.batch();
     batch.delete(orderRef);
     batch.delete(db.collection('tracking').doc(orderId));
     await batch.commit();
-    toast('Completed order deleted.');
+    toast('Order deleted.');
     loadOrders();
   } catch (error) {
     console.error(error);
@@ -542,7 +550,7 @@ async function deleteCompletedOrder(orderId) {
 }
 
 function renderAdminProducts() {
-  $('#adminProducts').innerHTML = products.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${peso(p.price)} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('');
+  $('#adminProducts').innerHTML = products.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category || 'Mains')} · ${peso(p.price)} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('');
   document.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => editProduct(btn.dataset.editProduct)));
   document.querySelectorAll('[data-delete-product]').forEach(btn => btn.addEventListener('click', () => deleteProduct(btn.dataset.deleteProduct)));
 }
@@ -550,21 +558,40 @@ function renderAdminProducts() {
 function editProduct(id) {
   const p = getProduct(id);
   const f = $('#productForm').elements;
-  f.id.value = p.id; f.name.value = p.name; f.price.value = p.price; f.image.value = p.image; f.available.checked = p.available !== false;
-  $('#productForm').scrollIntoView({ behavior: 'smooth' });
+  f.id.value = p.id; f.name.value = p.name; f.price.value = p.price; f.category.value = p.category || 'Mains';
+  f.currentImage.value = p.image || ''; f.available.checked = p.available !== false;
+  $('#productImagePreview').src = safeImage(p.image); $('#productForm').scrollIntoView({ behavior: 'smooth' });
 }
-
-function clearProductForm() { $('#productForm').reset(); $('#productForm').elements.id.value = ''; $('#productForm').elements.available.checked = true; }
+function clearProductForm() {
+  $('#productForm').reset(); const f = $('#productForm').elements;
+  f.id.value = ''; f.currentImage.value = ''; f.category.value = 'Mains'; f.available.checked = true;
+  $('#productImagePreview').src = 'assets/logo.png';
+}
+$('#productImageFile').addEventListener('change', event => {
+  const file = event.target.files?.[0]; if (!file) return;
+  if (!file.type.startsWith('image/')) { event.target.value = ''; return toast('Please choose an image file.'); }
+  if (file.size > 5 * 1024 * 1024) { event.target.value = ''; return toast('Image must be 5 MB or smaller.'); }
+  $('#productImagePreview').src = URL.createObjectURL(file);
+});
 $('#cancelEdit').addEventListener('click', clearProductForm);
 
 $('#productForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const data = new FormData(event.target);
+  event.preventDefault(); const data = new FormData(event.target);
   const id = data.get('id') || db.collection('products').doc().id;
+  const file = $('#productImageFile').files?.[0]; const saveButton = event.target.querySelector('button[type="submit"]');
+  saveButton.disabled = true; saveButton.textContent = file ? 'Uploading image…' : 'Saving…';
   try {
-    await db.collection('products').doc(id).set({ name: String(data.get('name')).trim(), price: Number(data.get('price')), image: String(data.get('image')).trim(), available: data.get('available') === 'on', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    let image = String(data.get('currentImage') || '').trim();
+    if (file) {
+      const extension = (file.name.split('.').pop() || 'jpg').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const imageRef = storage.ref().child(`products/${id}-${Date.now()}.${extension}`);
+      await imageRef.put(file, { contentType: file.type }); image = await imageRef.getDownloadURL();
+    }
+    if (!image) throw new Error('Please choose a product image from the gallery.');
+    await db.collection('products').doc(id).set({name:String(data.get('name')).trim(),price:Number(data.get('price')),category:String(data.get('category')||'Mains'),image,available:data.get('available')==='on',updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
     toast('Product saved'); clearProductForm(); await loadProducts();
-  } catch (error) { console.error(error); toast('Unable to save product.'); }
+  } catch (error) { console.error(error); toast(error.message || 'Unable to save product.'); }
+  finally { saveButton.disabled=false; saveButton.textContent='Save Product'; }
 });
 
 async function deleteProduct(id) {

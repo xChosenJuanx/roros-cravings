@@ -31,10 +31,11 @@
         <p>Choose your favorites and we'll prepare them fresh.</p>
       </section>
 
-      <section class="deliveryBox fixedDelivery">
-        <strong>📍 Delivery Area: Digos City</strong>
-        <span>Automatic delivery fee: ₱35</span>
-      </section>
+      <div id="menuCategories" class="menuCategories" aria-label="Menu categories">
+        <button class="menuCategory active" data-menu-category="Mains">🍽️ Mains</button>
+        <button class="menuCategory" data-menu-category="Beverage">🥤 Beverage</button>
+        <button class="menuCategory" data-menu-category="Sides">🍟 Sides</button>
+      </div>
 
       <section id="menu" class="grid"><p class="loading">Loading menu…</p></section>
     </section>
@@ -76,7 +77,11 @@
             <input type="hidden" name="id">
             <input required name="name" placeholder="Food name">
             <input required name="price" type="number" min="1" step="1" placeholder="Price">
-            <input required name="image" placeholder="Image path or URL (e.g. assets/food.png)">
+            <select required name="category"><option value="Mains">Mains</option><option value="Beverage">Beverage</option><option value="Sides">Sides</option></select>
+            <input type="hidden" name="currentImage">
+            <label class="galleryPicker"><span>📷 Choose Product Image from Gallery</span><input id="productImageFile" name="imageFile" type="file" accept="image/*"></label>
+            <img id="productImagePreview" class="productImagePreview" src="assets/logo.png" alt="Product image preview">
+            <small class="muted">Maximum image size: 5 MB.</small>
             <label class="check"><input name="available" type="checkbox" checked> Available</label>
             <div class="buttonRow"><button class="primary" type="submit">Save Product</button><button id="cancelEdit" class="secondary" type="button">Clear</button></div>
           </form>
@@ -155,6 +160,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
