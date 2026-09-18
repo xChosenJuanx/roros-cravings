@@ -31,16 +31,9 @@
         <p>Choose your favorites and we'll prepare them fresh.</p>
       </section>
 
-      <section class="deliveryBox">
-        <label for="deliveryArea"><strong>📍 Select your delivery area</strong></label>
-        <select id="deliveryArea" required>
-          <option value="">Choose City / Municipality</option>
-          <option value="Digos City">Digos City — ₱35 Delivery</option>
-          <option value="Hagonoy">Hagonoy — ₱45 Delivery</option>
-          <option value="Padada">Padada — ₱45 Delivery</option>
-          <option value="Kiblawan">Kiblawan — ₱60 Delivery</option>
-        </select>
-        <p class="deliveryNote">📌 Orders outside Digos City may require a minimum order. We will confirm availability.</p>
+      <section class="deliveryBox fixedDelivery">
+        <strong>📍 Delivery Area: Digos City</strong>
+        <span>Automatic delivery fee: ₱35</span>
       </section>
 
       <section id="menu" class="grid"><p class="loading">Loading menu…</p></section>
@@ -107,6 +100,10 @@
       <h3>Checkout details</h3>
       <input required name="name" maxlength="80" placeholder="Name">
       <textarea required name="address" maxlength="300" placeholder="Complete Address"></textarea>
+      <div class="locationShareBox">
+        <button id="shareLocationBtn" class="secondary" type="button">📍 Share My Delivery Location</button>
+        <small id="locationStatus">Optional but recommended for faster delivery.</small>
+      </div>
       <input required name="contact" maxlength="20" inputmode="tel" placeholder="Contact Number">
       <select required name="payment" id="paymentMethod">
         <option value="">Select payment method</option>

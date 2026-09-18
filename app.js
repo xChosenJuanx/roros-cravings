@@ -19,6 +19,7 @@ let currentUser = null;
 let pushStartedForUid = null;
 let cachedOrders = [];
 let currentOrderFilter = 'Pending';
+let deliveryLocation = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true },
@@ -31,7 +32,7 @@ const fallbackProducts = [
   { id: 'chick-fries', name: "Chick 'N Fries", price: 110, image: 'assets/chick-fries.png', available: true }
 ];
 
-const deliveryFees = { 'Digos City': 35, Hagonoy: 45, Padada: 45, Kiblawan: 60 };
+const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
 
@@ -88,15 +89,9 @@ function renderMenu() {
 }
 
 function getProduct(id) { return products.find(p => p.id === id); }
-function getDeliveryFee() { return deliveryFees[$('#deliveryArea').value] || 0; }
+function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
 
 function add(id) {
-  if (!$('#deliveryArea').value) {
-    toast('Please select your delivery area first.');
-    $('#deliveryArea').focus();
-    $('#deliveryArea').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return;
-  }
   cart[id] = (cart[id] || 0) + 1;
   updateTotals();
   toast('Added to cart');
@@ -140,10 +135,37 @@ function renderCart() {
   updateTotals();
 }
 
-$('#deliveryArea').addEventListener('change', updateTotals);
 $('#cartBtn').addEventListener('click', () => { renderCart(); $('#cartDialog').showModal(); });
 $('.closeDialog').addEventListener('click', () => $('#cartDialog').close());
 $('#paymentMethod').addEventListener('change', e => { $('#gcashInfo').hidden = e.target.value !== 'GCash'; });
+
+$('#shareLocationBtn').addEventListener('click', () => {
+  const button = $('#shareLocationBtn');
+  const status = $('#locationStatus');
+  if (!navigator.geolocation) {
+    status.textContent = 'Location is not supported on this device.';
+    return;
+  }
+  button.disabled = true;
+  button.textContent = 'Getting location…';
+  status.textContent = 'Please allow location access.';
+  navigator.geolocation.getCurrentPosition(position => {
+    deliveryLocation = {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: Math.round(position.coords.accuracy)
+    };
+    button.textContent = '✅ Delivery Location Shared';
+    status.textContent = `Location saved (accuracy: about ${deliveryLocation.accuracy} meters).`;
+    button.disabled = false;
+  }, error => {
+    console.error(error);
+    deliveryLocation = null;
+    button.textContent = '📍 Try Sharing Location Again';
+    status.textContent = 'Location not shared. Turn on GPS and allow permission, or provide a detailed address.';
+    button.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+});
 
 $('#customerOpen').addEventListener('click', () => $('#customerDialog').showModal());
 $('.closeCustomer').addEventListener('click', () => $('#customerDialog').close());
@@ -217,7 +239,6 @@ function makeOrderId() {
 
 $('#checkout').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!$('#deliveryArea').value) return toast('Select a delivery area first.');
   const t = totals();
   if (!t.quantity) return toast('Please add an item first.');
   if (!auth.currentUser || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL) {
@@ -241,7 +262,8 @@ $('#checkout').addEventListener('submit', async event => {
     contact: String(form.get('contact')).trim(),
     paymentMethod: form.get('payment'),
     notes: String(form.get('notes') || '').trim(),
-    deliveryArea: $('#deliveryArea').value,
+    deliveryArea: 'Digos City',
+    deliveryLocation: deliveryLocation ? { ...deliveryLocation } : null,
     items,
     subtotal: t.subtotal,
     deliveryFee: t.delivery,
@@ -263,13 +285,14 @@ $('#checkout').addEventListener('submit', async event => {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     await batch.commit();
-    const summary = [`Roro's Cravings – Order ${orderId}`, ...items.map(i => `${i.name} x${i.quantity} — ${peso(i.lineTotal)}`), `TOTAL: ${peso(order.total)}`, `Payment: ${order.paymentMethod}`, `Name: ${order.customerName}`, `Address: ${order.address}`, `Contact: ${order.contact}`].join('\n');
+    const summary = [`Roro's Cravings – Order ${orderId}`, ...items.map(i => `${i.name} x${i.quantity} — ${peso(i.lineTotal)}`), `TOTAL: ${peso(order.total)}`, `Payment: ${order.paymentMethod}`, `Name: ${order.customerName}`, `Address: ${order.address}`, ...(order.deliveryLocation ? [`Location: https://www.google.com/maps?q=${order.deliveryLocation.latitude},${order.deliveryLocation.longitude}`] : []), `Contact: ${order.contact}`].join('\n');
     $('#orderSuccess').innerHTML = `<h3>✅ Order submitted!</h3><p>Your Order ID:</p><div class="orderId">${orderId}</div><p>Save this ID to track your order.</p><div class="buttonStack"><button id="copyOrderId" class="secondary">Copy Order ID</button><a class="primary linkButton" href="https://m.me/RorosCravingsDigos" target="_blank" rel="noopener">Open Messenger</a></div>`;
     $('#orderSuccess').hidden = false;
     event.target.hidden = true;
     navigator.clipboard?.writeText(summary).catch(() => {});
     $('#copyOrderId').addEventListener('click', () => navigator.clipboard.writeText(orderId).then(() => toast('Order ID copied')));
     Object.keys(cart).forEach(key => delete cart[key]);
+    deliveryLocation = null;
     updateTotals();
   } catch (error) {
     console.error(error);
@@ -375,7 +398,8 @@ function renderOrders() {
   $('#ordersList').innerHTML = visibleOrders.length ? visibleOrders.map(order => `
     <article class="orderCard">
       <div class="orderHead"><div><b>${escapeHtml(order.orderId || order.id)}</b><small>${escapeHtml(timestampText(order.createdAt))}</small></div><span class="statusBadge">${escapeHtml(order.status)}</span></div>
-      <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}<br>${escapeHtml(order.address)}<br>${escapeHtml(order.deliveryArea)} · ${escapeHtml(order.paymentMethod)}</p>
+      <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}<br>${escapeHtml(order.address)}<br>Digos City · ${escapeHtml(order.paymentMethod)}</p>
+      ${order.deliveryLocation?.latitude && order.deliveryLocation?.longitude ? `<a class="mapButton" href="https://www.google.com/maps?q=${encodeURIComponent(order.deliveryLocation.latitude)},${encodeURIComponent(order.deliveryLocation.longitude)}" target="_blank" rel="noopener">📍 Open Customer Location</a>` : '<p class="locationMissing">No GPS pin shared — use the written address.</p>'}
       <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>

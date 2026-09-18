@@ -28,3 +28,10 @@ dialog{width:min(94%,600px);max-height:90vh;border:0;border-radius:20px;padding:
 .categorySummary{display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:#fff7df;border:1px solid #f3cf69;border-radius:12px;padding:.8rem 1rem;margin-bottom:.9rem;color:#392600}
 .emptyCategory{text-align:center;padding:2rem 1rem;color:#777;background:#fff;border-radius:14px}
 .deleteOrderBtn{width:100%;margin-top:.75rem}
+
+.fixedDelivery{display:flex;justify-content:space-between;gap:.75rem;align-items:center;flex-wrap:wrap}
+.fixedDelivery span{font-weight:800;color:#b31319}
+.locationShareBox{display:grid;gap:.4rem;margin:.15rem 0 .7rem}
+.locationShareBox small{color:#666;line-height:1.35}
+.mapButton{display:block;text-align:center;background:#1769e0;color:#fff;text-decoration:none;font-weight:800;border-radius:10px;padding:.75rem;margin:.65rem 0}
+.locationMissing{color:#986500;background:#fff5cf;border-radius:8px;padding:.6rem;font-size:.88rem}
