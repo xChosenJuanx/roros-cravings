@@ -25,6 +25,9 @@ let deliveryLocation = null;
 let currentChatOrderId = null;
 let unsubscribeChat = null;
 let currentMenuCategory = 'Mains';
+let unsubscribeConversationOrders = null;
+let conversationMessageListeners = new Map();
+let conversationSummaries = new Map();
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
@@ -61,6 +64,102 @@ function showView(id) {
   $('#cartBtn').hidden = id !== 'shopView';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+function isAdminUser(user = auth.currentUser) {
+  return user?.email?.toLowerCase() === ADMIN_EMAIL;
+}
+
+function chatReadKey(orderId) {
+  return `roros-chat-read:${auth.currentUser?.uid || 'guest'}:${orderId}`;
+}
+
+function messageMillis(message) {
+  return message?.createdAt?.toMillis ? message.createdAt.toMillis() : 0;
+}
+
+function markConversationRead(orderId, millis = Date.now()) {
+  localStorage.setItem(chatReadKey(orderId), String(millis));
+  const summary = conversationSummaries.get(orderId);
+  if (summary) summary.unread = 0;
+  renderConversationHub();
+}
+
+function stopConversationHub() {
+  if (unsubscribeConversationOrders) unsubscribeConversationOrders();
+  unsubscribeConversationOrders = null;
+  conversationMessageListeners.forEach(unsubscribe => unsubscribe());
+  conversationMessageListeners.clear();
+  conversationSummaries.clear();
+  $('#messageBadge').hidden = true;
+}
+
+function startConversationHub(user) {
+  stopConversationHub();
+  if (!user) return;
+  const admin = isAdminUser(user);
+  let query = db.collection('orders').orderBy('createdAt', 'desc').limit(admin ? 100 : 50);
+  if (!admin) query = db.collection('orders').where('userId', '==', user.uid).limit(50);
+  unsubscribeConversationOrders = query.onSnapshot(snapshot => {
+    const liveIds = new Set(snapshot.docs.map(doc => doc.id));
+    conversationMessageListeners.forEach((unsubscribe, orderId) => {
+      if (!liveIds.has(orderId)) { unsubscribe(); conversationMessageListeners.delete(orderId); conversationSummaries.delete(orderId); }
+    });
+    snapshot.docs.forEach(orderDoc => {
+      const orderId = orderDoc.id;
+      const order = { id: orderId, ...orderDoc.data() };
+      const existing = conversationSummaries.get(orderId) || {};
+      conversationSummaries.set(orderId, { ...existing, order });
+      if (conversationMessageListeners.has(orderId)) return;
+      const unsubscribe = orderDoc.ref.collection('messages').orderBy('createdAt', 'desc').limit(50)
+        .onSnapshot(messageSnapshot => {
+          const messages = messageSnapshot.docs.map(doc => doc.data());
+          const lastMessage = messages[0] || null;
+          const lastRead = Number(localStorage.getItem(chatReadKey(orderId)) || 0);
+          const unread = messages.filter(message => message.senderId !== user.uid && messageMillis(message) > lastRead).length;
+          conversationSummaries.set(orderId, { order, lastMessage, unread, hasMessages: !messageSnapshot.empty });
+          renderConversationHub();
+        }, error => console.debug(`Conversation ${orderId} unavailable`, error));
+      conversationMessageListeners.set(orderId, unsubscribe);
+    });
+    renderConversationHub();
+  }, error => {
+    console.error('Conversation list failed', error);
+    $('#conversationList').innerHTML = '<p class="error">Unable to load messages right now.</p>';
+  });
+}
+
+function renderConversationHub() {
+  const user = auth.currentUser;
+  if (!user) return;
+  const admin = isAdminUser(user);
+  let conversations = [...conversationSummaries.values()].filter(item => item.order);
+  if (admin) conversations = conversations.filter(item => item.hasMessages);
+  conversations.sort((a, b) => (messageMillis(b.lastMessage) || b.order.createdAt?.toMillis?.() || 0) - (messageMillis(a.lastMessage) || a.order.createdAt?.toMillis?.() || 0));
+  const totalUnread = conversations.reduce((sum, item) => sum + Number(item.unread || 0), 0);
+  const badge = $('#messageBadge');
+  badge.textContent = totalUnread > 99 ? '99+' : String(totalUnread);
+  badge.hidden = totalUnread === 0;
+  $('#conversationList').innerHTML = conversations.length ? conversations.map(({ order, lastMessage, unread }) => `
+    <button class="conversationItem" data-open-conversation="${escapeHtml(order.id)}">
+      <span class="conversationAvatar">💬</span>
+      <span class="conversationBody"><strong>${admin ? escapeHtml(order.customerName || 'Customer') : "Roro's Cravings"}</strong><small>Order ${escapeHtml(order.orderId || order.id)} · ${escapeHtml(order.status || '')}</small><span>${lastMessage ? escapeHtml(lastMessage.text) : 'Start a conversation about this order.'}</span></span>
+      ${unread ? `<b class="conversationUnread">${unread > 99 ? '99+' : unread}</b>` : ''}
+    </button>`).join('') : `<div class="emptyConversation"><b>No conversations yet</b><p>${admin ? 'Customer messages will appear here.' : 'Place an order first, then you can message us here about your concern.'}</p></div>`;
+  document.querySelectorAll('[data-open-conversation]').forEach(button => button.addEventListener('click', () => {
+    $('#conversationDialog').close();
+    openOrderChat(button.dataset.openConversation);
+  }));
+}
+
+$('#messagesBtn').addEventListener('click', () => {
+  if (!auth.currentUser) {
+    $('#customerDialog').showModal();
+    return toast('Please sign in to view your messages.');
+  }
+  renderConversationHub();
+  $('#conversationDialog').showModal();
+});
+$('.closeConversations').addEventListener('click', () => $('#conversationDialog').close());
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
 document.querySelectorAll('.adminTab').forEach(tab => tab.addEventListener('click', () => {
@@ -328,19 +427,6 @@ $('#trackForm').addEventListener('submit', async event => {
     result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3><div class="statusBadge">${escapeHtml(data.status)}</div>
       <div class="timeline">${STATUSES.slice(0, 5).map((s, i) => `<div class="timelineStep ${i <= step && step < 5 ? 'done' : ''}"><span></span>${s}</div>`).join('')}</div>
       <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
-    if (auth.currentUser) {
-      try {
-        const orderDoc = await db.collection('orders').doc(id).get();
-        const order = orderDoc.data();
-        const allowed = orderDoc.exists && (order.userId === auth.currentUser.uid || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL);
-        if (allowed) {
-          result.insertAdjacentHTML('beforeend', `<button id="customerChatBtn" class="primary chatLaunch">💬 Chat with Roro's Cravings</button>`);
-          $('#customerChatBtn').addEventListener('click', () => openOrderChat(id));
-        }
-      } catch (chatAccessError) {
-        console.debug('Chat unavailable for this account', chatAccessError);
-      }
-    }
   } catch (error) {
     console.error(error);
     result.innerHTML = '<p class="error">Unable to check right now. Please try again.</p>';
@@ -348,6 +434,7 @@ $('#trackForm').addEventListener('submit', async event => {
 });
 
 function closeOrderChat() {
+  if (currentChatOrderId) markConversationRead(currentChatOrderId);
   if (unsubscribeChat) unsubscribeChat();
   unsubscribeChat = null;
   currentChatOrderId = null;
@@ -374,6 +461,8 @@ async function openOrderChat(orderId) {
         return `<div class="chatBubble ${mine ? 'mine' : 'theirs'}"><b>${escapeHtml(message.senderName || (message.senderRole === 'admin' ? "Roro's Cravings" : 'Customer'))}</b><p>${escapeHtml(message.text)}</p><small>${escapeHtml(timestampText(message.createdAt))}</small></div>`;
       }).join('');
       box.scrollTop = box.scrollHeight;
+      const latest = snapshot.docs[snapshot.docs.length - 1]?.data();
+      markConversationRead(orderId, Math.max(Date.now(), messageMillis(latest)));
     }, error => {
       console.error(error);
       $('#chatMessages').innerHTML = '<p class="error">Chat could not load. Please try again.</p>';
@@ -382,6 +471,7 @@ async function openOrderChat(orderId) {
 
 $('.closeChat').addEventListener('click', closeOrderChat);
 $('#chatDialog').addEventListener('close', () => {
+  if (currentChatOrderId) markConversationRead(currentChatOrderId);
   if (unsubscribeChat) unsubscribeChat();
   unsubscribeChat = null;
   currentChatOrderId = null;
@@ -444,8 +534,10 @@ auth.onAuthStateChanged(async user => {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true }).catch(console.error);
     registerPushFor(user);
+    startConversationHub(user);
   } else {
     pushStartedForUid = null;
+    stopConversationHub();
   }
   if (isAdmin) {
     $('#adminEmail').textContent = user.email;

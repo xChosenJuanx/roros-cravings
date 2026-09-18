@@ -92,6 +92,9 @@
   </main>
 
   <button id="cartBtn" class="cartBtn">🛒 Cart <span id="count">0</span> · <span id="total">₱0</span></button>
+  <button id="messagesBtn" class="messagesBtn" type="button" aria-label="Open messages">
+    💬 <span>Messages</span><b id="messageBadge" class="messageBadge" hidden>0</b>
+  </button>
 
   <dialog id="cartDialog">
     <div class="dialogHead"><h2>Your Order</h2><button class="closeDialog" aria-label="Close">✕</button></div>
@@ -153,6 +156,11 @@
       <input id="chatInput" maxlength="500" autocomplete="off" placeholder="Type your message…" required>
       <button class="primary" type="submit">Send</button>
     </form>
+  </dialog>
+
+  <dialog id="conversationDialog" class="conversationDialog">
+    <div class="dialogHead"><div><h2>Messages</h2><small class="muted">Questions and concerns about your orders</small></div><button class="closeConversations" aria-label="Close">✕</button></div>
+    <div id="conversationList" class="conversationList"><p class="loading">Loading conversations…</p></div>
   </dialog>
 
   <div id="toast" class="toast" hidden></div>
