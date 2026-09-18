@@ -17,6 +17,8 @@ const FirebaseAuthentication = nativePlugins.FirebaseAuthentication;
 const PushNotifications = nativePlugins.PushNotifications;
 let currentUser = null;
 let pushStartedForUid = null;
+let cachedOrders = [];
+let currentOrderFilter = 'Pending';
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true },
@@ -347,24 +349,49 @@ auth.onAuthStateChanged(async user => {
 $('#logoutBtn').addEventListener('click', () => auth.signOut());
 $('#refreshOrders').addEventListener('click', loadOrders);
 
+function renderOrderCategories() {
+  const filters = $('#orderStatusFilters');
+  filters.innerHTML = STATUSES.map(status => {
+    const count = cachedOrders.filter(order => order.status === status).length;
+    return `<button class="orderFilter ${currentOrderFilter === status ? 'active' : ''}" data-order-filter="${escapeHtml(status)}">${escapeHtml(status)} <span>${count}</span></button>`;
+  }).join('');
+  document.querySelectorAll('[data-order-filter]').forEach(button => button.addEventListener('click', () => {
+    currentOrderFilter = button.dataset.orderFilter;
+    renderOrders();
+  }));
+}
+
+function renderOrders() {
+  renderOrderCategories();
+  const visibleOrders = cachedOrders.filter(order => order.status === currentOrderFilter);
+  const completedOrders = cachedOrders.filter(order => order.status === 'Completed');
+  const completedSales = completedOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const pendingCount = cachedOrders.filter(order => order.status === 'Pending').length;
+  $('#pendingCount').textContent = `${pendingCount} Pending`;
+  $('#categorySummary').innerHTML = currentOrderFilter === 'Completed'
+    ? `<strong>${completedOrders.length} Completed Orders</strong><strong>Total Sales: ${peso(completedSales)}</strong>`
+    : `<strong>${visibleOrders.length} ${escapeHtml(currentOrderFilter)} Orders</strong>`;
+
+  $('#ordersList').innerHTML = visibleOrders.length ? visibleOrders.map(order => `
+    <article class="orderCard">
+      <div class="orderHead"><div><b>${escapeHtml(order.orderId || order.id)}</b><small>${escapeHtml(timestampText(order.createdAt))}</small></div><span class="statusBadge">${escapeHtml(order.status)}</span></div>
+      <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}<br>${escapeHtml(order.address)}<br>${escapeHtml(order.deliveryArea)} · ${escapeHtml(order.paymentMethod)}</p>
+      <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
+      ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
+      <div class="orderTotal">Total: ${peso(order.total)}</div>
+      <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      ${order.status === 'Completed' ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>` : ''}
+    </article>`).join('') : `<p class="emptyCategory">No ${escapeHtml(currentOrderFilter.toLowerCase())} orders.</p>`;
+  document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
+  document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
+}
+
 async function loadOrders() {
   $('#ordersList').innerHTML = '<p class="loading">Loading orders…</p>';
   try {
-    const snap = await db.collection('orders').orderBy('createdAt', 'desc').limit(100).get();
-    const orders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    $('#pendingCount').textContent = `${orders.filter(o => o.status === 'Pending').length} Pending`;
-    $('#ordersList').innerHTML = orders.length ? orders.map(order => `
-      <article class="orderCard">
-        <div class="orderHead"><div><b>${escapeHtml(order.orderId || order.id)}</b><small>${escapeHtml(timestampText(order.createdAt))}</small></div><span class="statusBadge">${escapeHtml(order.status)}</span></div>
-        <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}<br>${escapeHtml(order.address)}<br>${escapeHtml(order.deliveryArea)} · ${escapeHtml(order.paymentMethod)}</p>
-        <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
-        ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
-        <div class="orderTotal">Total: ${peso(order.total)}</div>
-        <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
-        ${order.status === 'Completed' ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>` : ''}
-      </article>`).join('') : '<p>No orders yet.</p>';
-    document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
-    document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
+    const snap = await db.collection('orders').orderBy('createdAt', 'desc').limit(200).get();
+    cachedOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    renderOrders();
   } catch (error) {
     console.error(error);
     $('#ordersList').innerHTML = `<p class="error">Unable to load orders: ${escapeHtml(error.message)}</p>`;

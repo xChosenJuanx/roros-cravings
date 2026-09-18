@@ -19,3 +19,12 @@ dialog{width:min(94%,600px);max-height:90vh;border:0;border-radius:20px;padding:
 .accountBtn{border:1px solid #f5bd2a;background:#1b1b1b;color:#fff;border-radius:999px;padding:.55rem .8rem;font-weight:800;white-space:nowrap}
 .googleButton{width:100%;background:#fff;color:#222;border:1px solid #bbb;border-radius:10px;padding:.85rem;font-weight:800;font-size:1rem}
 .googleButton:disabled{opacity:.6}
+
+.orderStatusFilters{display:flex;gap:.5rem;overflow-x:auto;padding:.4rem 0 .8rem;scrollbar-width:thin}
+.orderFilter{flex:0 0 auto;border:1px solid #d5d5d5;background:#fff;color:#333;border-radius:999px;padding:.6rem .8rem;font-weight:800}
+.orderFilter span{display:inline-grid;place-items:center;min-width:1.45rem;height:1.45rem;margin-left:.25rem;border-radius:999px;background:#eee;font-size:.8rem}
+.orderFilter.active{background:#d71920;color:#fff;border-color:#d71920}
+.orderFilter.active span{background:#fff;color:#d71920}
+.categorySummary{display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:#fff7df;border:1px solid #f3cf69;border-radius:12px;padding:.8rem 1rem;margin-bottom:.9rem;color:#392600}
+.emptyCategory{text-align:center;padding:2rem 1rem;color:#777;background:#fff;border-radius:14px}
+.deleteOrderBtn{width:100%;margin-top:.75rem}
