@@ -178,8 +178,11 @@ async function playNotificationSound(type = 'chat') {
         playTone(context, index % 2 ? 560 : 780, now + offset, 0.21, 0.34, 'sawtooth');
       });
     } else {
-      playTone(context, 740, now, 0.16, 0.18);
-      playTone(context, 980, now + 0.2, 0.2, 0.18);
+      [0, 0.34, 0.68].forEach(offset => {
+        playTone(context, 660, now + offset, 0.24, 0.30, 'square');
+        playTone(context, 880, now + offset + 0.04, 0.24, 0.26, 'sine');
+        playTone(context, 1100, now + offset + 0.08, 0.22, 0.22, 'triangle');
+      });
     }
   }
   navigator.vibrate?.(type === 'order' ? Array.from({ length: 120 }, (_, index) => index % 2 ? 150 : 350) : [140, 80, 180]);
@@ -1097,6 +1100,7 @@ $('#etaDialog').addEventListener('cancel', event => {
 async function updateOrderStatus(orderId, status, etaMinutes = null) {
   try {
     const batch = db.batch();
+    const orderRef = db.collection('orders').doc(orderId);
     const update = { status, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
     if (etaMinutes) {
       update.estimatedMinutes = etaMinutes;
@@ -1106,8 +1110,26 @@ async function updateOrderStatus(orderId, status, etaMinutes = null) {
       update.estimatedCompletionAt = firebase.firestore.FieldValue.delete();
     }
     if (status === 'Completed') update.completedAt = firebase.firestore.FieldValue.serverTimestamp();
-    batch.update(db.collection('orders').doc(orderId), update);
+    const etaNotice = etaMinutes ? ` Estimated time: ${etaMinutes} minutes.` : '';
+    const statusMessages = {
+      Pending: 'Your order is pending and waiting for confirmation.',
+      Confirmed: `Your order has been confirmed.${etaNotice}`,
+      Preparing: 'Your order is now being prepared.',
+      'Out for Delivery': 'Your order is now out for delivery.',
+      Completed: 'Your order has been completed. Thank you for ordering!',
+      Cancelled: 'Your order has been cancelled. Please message us if you need assistance.'
+    };
+    batch.update(orderRef, update);
     batch.set(db.collection('tracking').doc(orderId), { orderId, ...update }, { merge: true });
+    batch.set(orderRef.collection('messages').doc(), {
+      text: `Order update: ${statusMessages[status] || `Status changed to ${status}.`}`,
+      senderId: auth.currentUser.uid,
+      senderName: "Roro's Cravings",
+      senderRole: 'admin',
+      messageType: 'status-update',
+      orderStatus: status,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     await batch.commit();
     toast(`Order marked ${status}`);
     loadOrders(false);
@@ -1135,7 +1157,10 @@ async function updateOrderEstimate(orderId, suggestedMinutes = 30) {
 }
 
 async function deleteCompletedOrder(orderId) {
-  if (!confirm(`Permanently delete order ${orderId}? It will also be removed from the daily sales record. This cannot be undone.`)) return;
+  const cachedOrder = cachedOrders.find(order => order.id === orderId);
+  const orderType = cachedOrder?.status || 'closed';
+  const salesWarning = orderType === 'Completed' ? ' It will also be removed from the daily sales record.' : '';
+  if (!confirm(`Permanently delete ${orderType.toLowerCase()} order ${orderId}?${salesWarning} This cannot be undone.`)) return;
   try {
     const orderRef = db.collection('orders').doc(orderId);
     const orderDoc = await orderRef.get();
