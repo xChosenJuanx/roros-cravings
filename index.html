@@ -20,11 +20,6 @@
     <button id="adminOpen" class="iconBtn" aria-label="Admin login">⚙️</button>
   </header>
 
-  <nav class="tabs" aria-label="App sections">
-    <button class="tab active" data-view="shopView">🍽️ Menu</button>
-    <button class="tab" data-view="trackView">📦 Track Order</button>
-  </nav>
-
   <main>
     <section id="shopView" class="view active">
       <section class="hero">
@@ -43,18 +38,6 @@
       </div>
 
       <section id="menu" class="grid"><p class="loading">Loading menu…</p></section>
-    </section>
-
-    <section id="trackView" class="view panelPage">
-      <div class="panel">
-        <h2>📦 Track your order</h2>
-        <p class="muted">Enter the Order ID shown after checkout.</p>
-        <form id="trackForm">
-          <input id="trackId" required autocomplete="off" placeholder="Example: RC-ABC123">
-          <button class="primary" type="submit">Check Status</button>
-        </form>
-        <div id="trackResult" class="result" hidden></div>
-      </div>
     </section>
 
     <section id="adminView" class="view panelPage">
