@@ -172,6 +172,26 @@
     </form>
   </dialog>
 
+  <dialog id="etaDialog" class="smallDialog etaDialog">
+    <div class="dialogHead"><h2>Estimated Time</h2><button id="closeEtaDialog" type="button" aria-label="Close">✕</button></div>
+    <form id="etaForm">
+      <p class="muted">Select the estimated preparation or delivery time.</p>
+      <label>Time from now
+        <select id="etaMinutesSelect" required>
+          <option value="10">10 minutes</option>
+          <option value="15">15 minutes</option>
+          <option value="20">20 minutes</option>
+          <option value="30" selected>30 minutes</option>
+          <option value="45">45 minutes</option>
+          <option value="60">1 hour</option>
+          <option value="90">1 hour 30 minutes</option>
+          <option value="120">2 hours</option>
+        </select>
+      </label>
+      <div class="buttonRow"><button class="primary" type="submit">Set Estimated Time</button><button id="cancelEtaDialog" class="secondary" type="button">Cancel</button></div>
+    </form>
+  </dialog>
+
   <dialog id="chatDialog" class="chatDialog">
     <div class="dialogHead"><div><h2>Order Chat</h2><small id="chatOrderId" class="muted"></small></div><button class="closeChat" aria-label="Close">✕</button></div>
     <div id="chatOrderTracker" class="chatOrderTracker"><p class="loading">Loading order status…</p></div>
