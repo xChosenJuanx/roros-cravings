@@ -47,6 +47,10 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, create, update: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow delete: if isAdmin();
+
+      match /hiddenConversations/{orderId} {
+        allow read, create, update, delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+      }
     }
 
     match /deviceTokens/{tokenId} {

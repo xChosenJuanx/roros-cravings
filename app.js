@@ -31,6 +31,8 @@ let unsubscribeConversationOrders = null;
 let conversationMessageListeners = new Map();
 let conversationSummaries = new Map();
 let initializedConversationMessages = new Set();
+let hiddenConversationIds = new Set();
+let unsubscribeHiddenConversations = null;
 let storeStatus = 'Available';
 let unsubscribeStoreStatus = null;
 let unsubscribeAdminOrders = null;
@@ -266,11 +268,14 @@ function markConversationRead(orderId, millis = Date.now()) {
 
 function stopConversationHub() {
   if (unsubscribeConversationOrders) unsubscribeConversationOrders();
+  if (unsubscribeHiddenConversations) unsubscribeHiddenConversations();
   unsubscribeConversationOrders = null;
+  unsubscribeHiddenConversations = null;
   conversationMessageListeners.forEach(unsubscribe => unsubscribe());
   conversationMessageListeners.clear();
   conversationSummaries.clear();
   initializedConversationMessages.clear();
+  hiddenConversationIds.clear();
   $('#messageBadge').hidden = true;
 }
 
@@ -278,6 +283,13 @@ function startConversationHub(user) {
   stopConversationHub();
   if (!user) return;
   const admin = isAdminUser(user);
+  if (!admin) {
+    unsubscribeHiddenConversations = db.collection('users').doc(user.uid).collection('hiddenConversations')
+      .onSnapshot(snapshot => {
+        hiddenConversationIds = new Set(snapshot.docs.map(doc => doc.id));
+        renderConversationHub();
+      }, error => console.debug('Hidden conversations unavailable', error));
+  }
   let query = db.collection('orders').orderBy('createdAt', 'desc').limit(admin ? 100 : 50);
   if (!admin) query = db.collection('orders').where('userId', '==', user.uid).limit(50);
   unsubscribeConversationOrders = query.onSnapshot(snapshot => {
@@ -319,23 +331,48 @@ function renderConversationHub() {
   const user = auth.currentUser;
   if (!user) return;
   const admin = isAdminUser(user);
-  let conversations = [...conversationSummaries.values()].filter(item => item.order && item.order.chatArchived !== true);
+  let conversations = [...conversationSummaries.values()].filter(item => item.order && item.order.chatArchived !== true && !hiddenConversationIds.has(item.order.id));
   if (admin) conversations = conversations.filter(item => item.hasMessages);
   conversations.sort((a, b) => (messageMillis(b.lastMessage) || b.order.createdAt?.toMillis?.() || 0) - (messageMillis(a.lastMessage) || a.order.createdAt?.toMillis?.() || 0));
   const totalUnread = conversations.reduce((sum, item) => sum + Number(item.unread || 0), 0);
   const badge = $('#messageBadge');
   badge.textContent = totalUnread > 99 ? '99+' : String(totalUnread);
   badge.hidden = totalUnread === 0;
-  $('#conversationList').innerHTML = conversations.length ? conversations.map(({ order, lastMessage, unread }) => `
-    <button class="conversationItem" data-open-conversation="${escapeHtml(order.id)}">
-      <span class="conversationAvatar">💬</span>
-      <span class="conversationBody"><strong>${admin ? escapeHtml(order.customerName || 'Customer') : "Roro's Cravings"}</strong><small>Order ${escapeHtml(order.orderId || order.id)} · ${escapeHtml(order.status || '')}</small><span>${lastMessage ? escapeHtml(lastMessage.text) : 'Start a conversation about this order.'}</span></span>
-      ${unread ? `<b class="conversationUnread">${unread > 99 ? '99+' : unread}</b>` : ''}
-    </button>`).join('') : `<div class="emptyConversation"><b>No conversations yet</b><p>${admin ? 'Customer messages will appear here.' : 'Place an order first, then you can message us here about your concern.'}</p></div>`;
+  $('#conversationList').innerHTML = conversations.length ? conversations.map(({ order, lastMessage, unread }) => {
+    const closed = ['Completed', 'Cancelled'].includes(order.status);
+    return `<div class="conversationItem">
+      <button class="conversationOpen" data-open-conversation="${escapeHtml(order.id)}">
+        <span class="conversationAvatar">💬</span>
+        <span class="conversationBody"><strong>${admin ? escapeHtml(order.customerName || 'Customer') : "Roro's Cravings"}</strong><small>Order ${escapeHtml(order.orderId || order.id)} · ${escapeHtml(order.status || '')}</small><span>${lastMessage ? escapeHtml(lastMessage.text) : 'Start a conversation about this order.'}</span></span>
+        ${unread ? `<b class="conversationUnread">${unread > 99 ? '99+' : unread}</b>` : ''}
+      </button>
+      ${closed ? `<button class="conversationDelete" data-delete-conversation="${escapeHtml(order.id)}" aria-label="Delete closed conversation" title="Delete conversation">🗑</button>` : ''}
+    </div>`;
+  }).join('') : `<div class="emptyConversation"><b>No conversations yet</b><p>${admin ? 'Customer messages will appear here.' : 'Place an order first, then you can message us here about your concern.'}</p></div>`;
   document.querySelectorAll('[data-open-conversation]').forEach(button => button.addEventListener('click', () => {
     $('#conversationDialog').close();
     openOrderChat(button.dataset.openConversation);
   }));
+  document.querySelectorAll('[data-delete-conversation]').forEach(button => button.addEventListener('click', () => removeConversationFromInbox(button.dataset.deleteConversation)));
+}
+
+async function removeConversationFromInbox(orderId) {
+  const order = conversationSummaries.get(orderId)?.order;
+  if (!order || !['Completed', 'Cancelled'].includes(order.status)) return toast('Only completed or cancelled chats can be deleted.');
+  const label = order.orderId || order.id;
+  if (!confirm(`Delete conversation for order ${label}? The order record will remain.`)) return;
+  if (isAdminUser()) return deleteCompletedOrderChat(orderId, true);
+  try {
+    await db.collection('users').doc(auth.currentUser.uid).collection('hiddenConversations').doc(orderId).set({
+      hiddenAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    hiddenConversationIds.add(orderId);
+    renderConversationHub();
+    toast('Conversation removed from Messages.');
+  } catch (error) {
+    console.error(error);
+    toast('Unable to remove this conversation.');
+  }
 }
 
 $('#messagesBtn').addEventListener('click', () => {
@@ -1168,12 +1205,12 @@ async function deleteCompletedOrder(orderId) {
   }
 }
 
-async function deleteCompletedOrderChat(orderId) {
-  if (!confirm(`Delete all chat messages for completed order ${orderId}? The order and its sales record will remain.`)) return;
+async function deleteCompletedOrderChat(orderId, confirmed = false) {
+  if (!confirmed && !confirm(`Delete all chat messages for closed order ${orderId}? The order and its sales record will remain.`)) return;
   try {
     const orderRef = db.collection('orders').doc(orderId);
     const orderDoc = await orderRef.get();
-    if (!orderDoc.exists || orderDoc.data().status !== 'Completed') return toast('Chat can only be deleted after the order is completed.');
+    if (!orderDoc.exists || !['Completed', 'Cancelled'].includes(orderDoc.data().status)) return toast('Chat can only be deleted after the order is closed.');
     let deleted = 0;
     while (true) {
       const messages = await orderRef.collection('messages').limit(400).get();
@@ -1188,7 +1225,7 @@ async function deleteCompletedOrderChat(orderId) {
       chatArchivedAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast(deleted ? 'Completed chat deleted. Sales record kept.' : 'Chat archived. Sales record kept.');
+    toast(deleted ? 'Closed-order chat deleted. Order record kept.' : 'Chat archived. Order record kept.');
   } catch (error) {
     console.error(error);
     toast('Unable to delete this chat. Check the updated Firestore rules.');
