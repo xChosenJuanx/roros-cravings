@@ -30,10 +30,14 @@ let currentMenuCategory = 'Mains';
 let unsubscribeConversationOrders = null;
 let conversationMessageListeners = new Map();
 let conversationSummaries = new Map();
+let initializedConversationMessages = new Set();
 let storeStatus = 'Available';
 let unsubscribeStoreStatus = null;
 let unsubscribeAdminOrders = null;
 let adminOrdersRefreshTimer = null;
+let adminOrdersInitialized = false;
+let notificationSoundEnabled = localStorage.getItem('roros-notification-sound') !== 'off';
+let notificationAudioContext = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
@@ -80,6 +84,67 @@ function toast(message) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { el.hidden = true; }, 2800);
 }
+
+function updateSoundToggle() {
+  const button = $('#soundToggle');
+  button.textContent = notificationSoundEnabled ? '🔊' : '🔇';
+  button.classList.toggle('off', !notificationSoundEnabled);
+  button.setAttribute('aria-label', notificationSoundEnabled ? 'Turn notification sound off' : 'Turn notification sound on');
+  button.title = notificationSoundEnabled ? 'Notification sound on' : 'Notification sound off';
+}
+
+function getAudioContext() {
+  if (!notificationAudioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) notificationAudioContext = new AudioContextClass();
+  }
+  if (notificationAudioContext?.state === 'suspended') notificationAudioContext.resume().catch(() => {});
+  return notificationAudioContext;
+}
+
+function playTone(context, frequency, start, duration, volume = 0.18) {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.02);
+}
+
+function playNotificationSound(type = 'chat') {
+  if (!notificationSoundEnabled || document.visibilityState !== 'visible') return;
+  const context = getAudioContext();
+  if (context) {
+    const now = context.currentTime + 0.02;
+    if (type === 'order') {
+      [0, 0.28, 0.56, 0.84].forEach((offset, index) => playTone(context, index % 2 ? 880 : 660, now + offset, 0.2, 0.24));
+    } else {
+      playTone(context, 740, now, 0.16, 0.18);
+      playTone(context, 980, now + 0.2, 0.2, 0.18);
+    }
+  }
+  navigator.vibrate?.(type === 'order' ? [250, 120, 250, 120, 400] : [140, 80, 180]);
+}
+
+$('#soundToggle').addEventListener('click', () => {
+  notificationSoundEnabled = !notificationSoundEnabled;
+  localStorage.setItem('roros-notification-sound', notificationSoundEnabled ? 'on' : 'off');
+  updateSoundToggle();
+  if (notificationSoundEnabled) {
+    getAudioContext();
+    playNotificationSound('chat');
+    toast('Notification sound is on.');
+  } else {
+    toast('Notification sound is off.');
+  }
+});
+document.addEventListener('pointerdown', () => { if (notificationSoundEnabled) getAudioContext(); }, { once: true });
+updateSoundToggle();
 
 const STORE_STATUS_DETAILS = {
   Available: { message: 'We are accepting orders.', className: 'available' },
@@ -146,6 +211,7 @@ function stopConversationHub() {
   conversationMessageListeners.forEach(unsubscribe => unsubscribe());
   conversationMessageListeners.clear();
   conversationSummaries.clear();
+  initializedConversationMessages.clear();
   $('#messageBadge').hidden = true;
 }
 
@@ -158,7 +224,7 @@ function startConversationHub(user) {
   unsubscribeConversationOrders = query.onSnapshot(snapshot => {
     const liveIds = new Set(snapshot.docs.map(doc => doc.id));
     conversationMessageListeners.forEach((unsubscribe, orderId) => {
-      if (!liveIds.has(orderId)) { unsubscribe(); conversationMessageListeners.delete(orderId); conversationSummaries.delete(orderId); }
+      if (!liveIds.has(orderId)) { unsubscribe(); conversationMessageListeners.delete(orderId); conversationSummaries.delete(orderId); initializedConversationMessages.delete(orderId); }
     });
     snapshot.docs.forEach(orderDoc => {
       const orderId = orderDoc.id;
@@ -169,6 +235,12 @@ function startConversationHub(user) {
       const unsubscribe = orderDoc.ref.collection('messages').orderBy('createdAt', 'desc').limit(50)
         .onSnapshot(messageSnapshot => {
           const messages = messageSnapshot.docs.map(doc => doc.data());
+          if (initializedConversationMessages.has(orderId)) {
+            const hasIncomingMessage = messageSnapshot.docChanges().some(change => change.type === 'added' && change.doc.data().senderId !== user.uid);
+            if (hasIncomingMessage) playNotificationSound('chat');
+          } else {
+            initializedConversationMessages.add(orderId);
+          }
           const lastMessage = messages[0] || null;
           const lastRead = Number(localStorage.getItem(chatReadKey(orderId)) || 0);
           const unread = messages.filter(message => message.senderId !== user.uid && messageMillis(message) > lastRead).length;
@@ -735,6 +807,7 @@ function stopAdminOrderUpdates() {
   unsubscribeAdminOrders = null;
   if (adminOrdersRefreshTimer) clearInterval(adminOrdersRefreshTimer);
   adminOrdersRefreshTimer = null;
+  adminOrdersInitialized = false;
 }
 
 function startAdminOrderUpdates() {
@@ -742,6 +815,12 @@ function startAdminOrderUpdates() {
   $('#ordersList').innerHTML = '<p class="loading">Connecting to live orders…</p>';
   unsubscribeAdminOrders = db.collection('orders').orderBy('createdAt', 'desc').limit(200)
     .onSnapshot(snapshot => {
+      if (adminOrdersInitialized) {
+        const hasNewOrder = snapshot.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'Pending');
+        if (hasNewOrder) playNotificationSound('order');
+      } else {
+        adminOrdersInitialized = true;
+      }
       cachedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       renderOrders();
     }, error => {
@@ -750,7 +829,7 @@ function startAdminOrderUpdates() {
     });
   adminOrdersRefreshTimer = setInterval(() => {
     if (isAdminUser()) loadOrders(false);
-  }, 2 * 60 * 1000);
+  }, 60 * 1000);
 }
 
 async function handleStatusChange(select) {
