@@ -1,4 +1,4 @@
-const CACHE = 'roros-v14-order-alarm-eta';
+const CACHE = 'roros-v15-pwa-sound-fix';
 const ASSETS = ['./','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/hungarian.png','assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png'];
 self.addEventListener('install', event => { self.skipWaiting(); event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });
