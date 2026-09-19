@@ -192,6 +192,18 @@
     </form>
   </dialog>
 
+  <dialog id="orderEditorDialog" class="orderEditorDialog">
+    <div class="dialogHead"><div><h2>Edit Pending Order</h2><small id="editOrderId" class="muted"></small></div><button id="closeOrderEditor" type="button" aria-label="Close">✕</button></div>
+    <p class="muted editOrderNote">Adjust unavailable items before confirming. The customer will see the updated order instantly.</p>
+    <div id="editOrderItems" class="editOrderItems"></div>
+    <div class="editOrderTotals">
+      <div><span>Subtotal</span><b id="editOrderSubtotal">₱0</b></div>
+      <div><span>Delivery</span><b id="editOrderDelivery">₱0</b></div>
+      <div class="grand"><span>New Total</span><strong id="editOrderTotal">₱0</strong></div>
+    </div>
+    <div class="buttonRow"><button id="saveOrderEdit" class="primary" type="button">Save Updated Order</button><button id="cancelOrderEdit" class="secondary" type="button">Cancel</button></div>
+  </dialog>
+
   <dialog id="chatDialog" class="chatDialog">
     <div class="dialogHead"><div><h2>Order Chat</h2><small id="chatOrderId" class="muted"></small></div><button class="closeChat" aria-label="Close">✕</button></div>
     <div id="chatOrderTracker" class="chatOrderTracker"><p class="loading">Loading order status…</p></div>
