@@ -31,7 +31,9 @@ dialog{width:min(94%,600px);max-height:90vh;border:0;border-radius:20px;padding:
 .orderFilter.active span{background:#fff;color:#d71920}
 .categorySummary{display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;background:#fff7df;border:1px solid #f3cf69;border-radius:12px;padding:.8rem 1rem;margin-bottom:.9rem;color:#392600}
 .emptyCategory{text-align:center;padding:2rem 1rem;color:#777;background:#fff;border-radius:14px}
-.deleteOrderBtn{width:100%;margin-top:.75rem}
+.deleteOrderBtn,.deleteChatBtn{width:100%;margin-top:.75rem}
+.dailySalesToolbar{max-width:1076px;margin:12px auto;display:flex;align-items:end;justify-content:space-between;gap:1rem;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px}.dailySalesToolbar>div{display:grid;gap:.25rem}.dailySalesToolbar small{color:#aaa}.dailySalesToolbar label{display:grid;gap:.3rem;font-weight:800}.dailySalesToolbar select{min-width:210px;padding:10px;border-radius:9px}.salesRecord .orderTotal{font-size:1.35rem}
+@media(max-width:600px){.dailySalesToolbar{align-items:stretch;flex-direction:column}.dailySalesToolbar select{width:100%}}
 
 .fixedDelivery{display:flex;justify-content:space-between;gap:.75rem;align-items:center;flex-wrap:wrap}
 .fixedDelivery span{font-weight:800;color:#b31319}
