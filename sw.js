@@ -1,5 +1,5 @@
-const CACHE = 'roros-v19-closed-chat-inbox-delete';
-const ASSETS = ['./','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/hungarian.png','assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png'];
+const CACHE = 'roros-v20-gcash-payment-qr';
+const ASSETS = ['./','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/hungarian.png','assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png','assets/gcash-qr.png'];
 self.addEventListener('install', event => { self.skipWaiting(); event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', event => {

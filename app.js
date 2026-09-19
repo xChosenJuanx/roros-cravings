@@ -456,6 +456,7 @@ function updateTotals() {
   $('#subtotalText').textContent = peso(t.subtotal);
   $('#deliveryText').textContent = peso(t.delivery);
   $('#grand').textContent = peso(t.subtotal + t.delivery);
+  $('#gcashAmount').textContent = peso(t.subtotal + t.delivery);
 }
 
 function renderCart() {
@@ -491,6 +492,23 @@ $('#cartBtn').addEventListener('click', () => {
 });
 $('.closeDialog').addEventListener('click', () => $('#cartDialog').close());
 $('#paymentMethod').addEventListener('change', e => { $('#gcashInfo').hidden = e.target.value !== 'GCash'; });
+
+$('#copyGcashNumber').addEventListener('click', async () => {
+  const number = $('#gcashNumber').textContent.trim();
+  try {
+    await navigator.clipboard.writeText(number);
+  } catch (error) {
+    const input = document.createElement('input');
+    input.value = number;
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand('copy');
+    input.remove();
+  }
+  $('#copyGcashNumber').textContent = '✅ GCash Number Copied';
+  toast('GCash number copied: 09272995716');
+  setTimeout(() => { $('#copyGcashNumber').textContent = '📋 Copy GCash Number'; }, 1800);
+});
 
 $('#shareLocationBtn').addEventListener('click', () => {
   const button = $('#shareLocationBtn');

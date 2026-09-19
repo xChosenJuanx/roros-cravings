@@ -124,7 +124,15 @@
         <option value="COD">Cash on Delivery (COD)</option>
         <option value="GCash">GCash</option>
       </select>
-      <div id="gcashInfo" class="gcashInfo" hidden><b>GCash: 09272995716</b><br>Account Name: Fedelina Perez<br><small>Please keep your payment reference or screenshot.</small></div>
+      <section id="gcashInfo" class="gcashInfo" hidden>
+        <h4>Pay with GCash</h4>
+        <img class="gcashQr" src="assets/gcash-qr.png" alt="GCash InstaPay QR code for Fedelina Perez">
+        <p class="gcashAccount"><span>Account Name</span><strong>Fedelina Perez</strong></p>
+        <p class="gcashAccount"><span>GCash Number</span><strong id="gcashNumber">09272995716</strong></p>
+        <button id="copyGcashNumber" class="gcashCopyButton" type="button">📋 Copy GCash Number</button>
+        <p class="gcashAmount"><span>Amount to Send</span><strong id="gcashAmount">₱0</strong></p>
+        <small>Scan the QR or copy the number, then keep your payment reference or screenshot.</small>
+      </section>
       <textarea name="notes" maxlength="250" placeholder="Order notes (optional)"></textarea>
       <button id="placeOrderBtn" class="primary" type="submit">Place Order</button>
     </form>
