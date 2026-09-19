@@ -65,6 +65,7 @@
 
       <div class="adminTabs">
         <button class="adminTab active" data-admin="ordersPanel">Orders</button>
+        <button class="adminTab" data-admin="salesPanel">Daily Sales</button>
         <button class="adminTab" data-admin="menuPanel">Menu Editor</button>
       </div>
 
@@ -81,6 +82,15 @@
         <div id="orderStatusFilters" class="orderStatusFilters" aria-label="Order status categories"></div>
         <div id="categorySummary" class="categorySummary"></div>
         <div id="ordersList" class="ordersList"><p class="loading">Loading orders…</p></div>
+      </section>
+
+      <section id="salesPanel" class="adminPanel">
+        <div class="dailySalesToolbar">
+          <div><strong>Daily Sales Recorder</strong><small>Completed orders are grouped by Philippine date.</small></div>
+          <label>Date<select id="salesDateSelect" aria-label="Sales date"></select></label>
+        </div>
+        <div id="dailySalesSummary" class="categorySummary"></div>
+        <div id="dailySalesOrders" class="ordersList"></div>
       </section>
 
       <section id="menuPanel" class="adminPanel">
