@@ -36,6 +36,8 @@ let unsubscribeStoreStatus = null;
 let unsubscribeAdminOrders = null;
 let adminOrdersRefreshTimer = null;
 let adminOrdersInitialized = false;
+let currentSalesDate = '';
+let midnightResetTimer = null;
 let notificationSoundEnabled = localStorage.getItem('roros-notification-sound') !== 'off';
 let notificationAudioContext = null;
 
@@ -64,6 +66,25 @@ function dateFromTimestamp(value) {
   if (value?.toDate) return value.toDate();
   if (value instanceof Date) return value;
   return null;
+}
+
+function philippineDateKey(value = new Date()) {
+  const date = dateFromTimestamp(value) || value;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function completedDateKey(order) {
+  return philippineDateKey(order.completedAt || order.updatedAt || order.createdAt || new Date());
+}
+
+function salesDateLabel(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-PH', {
+    timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric'
+  });
 }
 
 function etaText(order) {
@@ -102,10 +123,10 @@ function getAudioContext() {
   return notificationAudioContext;
 }
 
-function playTone(context, frequency, start, duration, volume = 0.18) {
+function playTone(context, frequency, start, duration, volume = 0.18, wave = 'sine') {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
-  oscillator.type = 'sine';
+  oscillator.type = wave;
   oscillator.frequency.setValueAtTime(frequency, start);
   gain.gain.setValueAtTime(0.0001, start);
   gain.gain.exponentialRampToValueAtTime(volume, start + 0.015);
@@ -122,13 +143,16 @@ function playNotificationSound(type = 'chat') {
   if (context) {
     const now = context.currentTime + 0.02;
     if (type === 'order') {
-      [0, 0.28, 0.56, 0.84].forEach((offset, index) => playTone(context, index % 2 ? 880 : 660, now + offset, 0.2, 0.24));
+      [0, 0.24, 0.48, 0.72, 0.96, 1.2, 1.44, 1.68, 1.92, 2.16].forEach((offset, index) => {
+        playTone(context, index % 2 ? 1120 : 520, now + offset, 0.21, 0.72, 'square');
+        playTone(context, index % 2 ? 560 : 780, now + offset, 0.21, 0.34, 'sawtooth');
+      });
     } else {
       playTone(context, 740, now, 0.16, 0.18);
       playTone(context, 980, now + 0.2, 0.2, 0.18);
     }
   }
-  navigator.vibrate?.(type === 'order' ? [250, 120, 250, 120, 400] : [140, 80, 180]);
+  navigator.vibrate?.(type === 'order' ? [350, 100, 350, 100, 350, 100, 650] : [140, 80, 180]);
 }
 
 $('#soundToggle').addEventListener('click', () => {
@@ -260,7 +284,7 @@ function renderConversationHub() {
   const user = auth.currentUser;
   if (!user) return;
   const admin = isAdminUser(user);
-  let conversations = [...conversationSummaries.values()].filter(item => item.order);
+  let conversations = [...conversationSummaries.values()].filter(item => item.order && item.order.chatArchived !== true);
   if (admin) conversations = conversations.filter(item => item.hasMessages);
   conversations.sort((a, b) => (messageMillis(b.lastMessage) || b.order.createdAt?.toMillis?.() || 0) - (messageMillis(a.lastMessage) || a.order.createdAt?.toMillis?.() || 0));
   const totalUnread = conversations.reduce((sum, item) => sum + Number(item.unread || 0), 0);
@@ -293,6 +317,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
 document.querySelectorAll('.adminTab').forEach(tab => tab.addEventListener('click', () => {
   document.querySelectorAll('.adminTab').forEach(t => t.classList.toggle('active', t === tab));
   document.querySelectorAll('.adminPanel').forEach(p => p.classList.toggle('active', p.id === tab.dataset.admin));
+  if (tab.dataset.admin === 'salesPanel') renderDailySales();
 }));
 
 async function loadProducts() {
@@ -330,6 +355,7 @@ function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
 
 function add(id) {
   if (storeStatus === 'Closed') return toast('The store is currently closed.');
+  if (!$('#orderSuccess').hidden) resetCheckoutForNewOrder();
   cart[id] = (cart[id] || 0) + 1;
   updateTotals();
   toast('Added to cart');
@@ -373,7 +399,25 @@ function renderCart() {
   updateTotals();
 }
 
-$('#cartBtn').addEventListener('click', () => { renderCart(); $('#cartDialog').showModal(); });
+function resetCheckoutForNewOrder() {
+  const checkout = $('#checkout');
+  checkout.reset();
+  checkout.hidden = false;
+  $('#orderSuccess').hidden = true;
+  $('#gcashInfo').hidden = true;
+  deliveryLocation = null;
+  $('#shareLocationBtn').disabled = false;
+  $('#shareLocationBtn').textContent = '📍 Share My Delivery Location';
+  $('#locationStatus').textContent = 'Optional but recommended for faster delivery.';
+  $('#placeOrderBtn').disabled = storeStatus === 'Closed';
+  $('#placeOrderBtn').textContent = storeStatus === 'Closed' ? 'Store is Closed' : 'Place Order';
+}
+
+$('#cartBtn').addEventListener('click', () => {
+  if (!$('#orderSuccess').hidden && totals().quantity > 0) resetCheckoutForNewOrder();
+  renderCart();
+  $('#cartDialog').showModal();
+});
 $('.closeDialog').addEventListener('click', () => $('#cartDialog').close());
 $('#paymentMethod').addEventListener('change', e => { $('#gcashInfo').hidden = e.target.value !== 'GCash'; });
 
@@ -744,9 +788,10 @@ $('#adminStoreStatus').addEventListener('change', async event => {
 });
 
 function renderOrderCategories() {
+  const today = philippineDateKey();
   const filters = $('#orderStatusFilters');
   filters.innerHTML = ORDER_TABS.map(status => {
-    const count = cachedOrders.filter(order => order.status === status).length;
+    const count = cachedOrders.filter(order => order.status === status && (status !== 'Completed' || completedDateKey(order) === today)).length;
     return `<button class="orderFilter ${currentOrderFilter === status ? 'active' : ''}" data-order-filter="${escapeHtml(status)}"><b>${escapeHtml(status.toUpperCase())}</b><span>${count}</span></button>`;
   }).join('');
   document.querySelectorAll('[data-order-filter]').forEach(button => button.addEventListener('click', () => {
@@ -757,13 +802,14 @@ function renderOrderCategories() {
 
 function renderOrders() {
   renderOrderCategories();
-  const visibleOrders = cachedOrders.filter(order => order.status === currentOrderFilter);
-  const completedOrders = cachedOrders.filter(order => order.status === 'Completed');
+  const today = philippineDateKey();
+  const visibleOrders = cachedOrders.filter(order => order.status === currentOrderFilter && (order.status !== 'Completed' || completedDateKey(order) === today));
+  const completedOrders = cachedOrders.filter(order => order.status === 'Completed' && completedDateKey(order) === today);
   const completedSales = completedOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
   const pendingCount = cachedOrders.filter(order => order.status === 'Pending').length;
   $('#pendingCount').textContent = `${pendingCount} Pending`;
   $('#categorySummary').innerHTML = currentOrderFilter === 'Completed'
-    ? `<div><small>COMPLETED ORDERS</small><strong>${completedOrders.length}</strong></div><div><small>TOTAL COMPLETED SALES</small><strong>${peso(completedSales)}</strong></div>`
+    ? `<div><small>COMPLETED TODAY</small><strong>${completedOrders.length}</strong></div><div><small>TODAY'S COMPLETED SALES</small><strong>${peso(completedSales)}</strong></div>`
     : `<strong>${visibleOrders.length} ${escapeHtml(currentOrderFilter)} Orders</strong>`;
 
   $('#ordersList').innerHTML = visibleOrders.length ? visibleOrders.map(order => `
@@ -782,12 +828,36 @@ function renderOrders() {
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       ${['Confirmed', 'Preparing', 'Out for Delivery'].includes(order.status) ? `<button class="secondary updateEtaBtn" data-eta-order="${escapeHtml(order.id)}" data-eta-minutes="${remainingEtaMinutes(order)}">⏱ Update Estimated Time</button>` : ''}
       <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
+      ${order.status === 'Completed' && order.chatArchived !== true ? `<button class="danger deleteChatBtn" data-delete-chat="${escapeHtml(order.id)}">🗑 Delete Completed Order Chat</button>` : ''}
       ${['Completed', 'Cancelled'].includes(order.status) ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete ${escapeHtml(order.status)} Order</button>` : ''}
     </article>`).join('') : `<p class="emptyCategory">No ${escapeHtml(currentOrderFilter.toLowerCase())} orders.</p>`;
   document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => handleStatusChange(select)));
   document.querySelectorAll('[data-eta-order]').forEach(button => button.addEventListener('click', () => updateOrderEstimate(button.dataset.etaOrder, Number(button.dataset.etaMinutes || 30))));
+  document.querySelectorAll('[data-delete-chat]').forEach(button => button.addEventListener('click', () => deleteCompletedOrderChat(button.dataset.deleteChat)));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
   document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
+  renderDailySales();
+}
+
+function renderDailySales() {
+  const completed = cachedOrders.filter(order => order.status === 'Completed');
+  const dates = [...new Set(completed.map(completedDateKey))].sort().reverse();
+  const today = philippineDateKey();
+  if (!currentSalesDate || !dates.includes(currentSalesDate)) currentSalesDate = dates[0] || today;
+  const select = $('#salesDateSelect');
+  select.innerHTML = (dates.length ? dates : [today]).map(date => `<option value="${date}" ${date === currentSalesDate ? 'selected' : ''}>${escapeHtml(salesDateLabel(date))}${date === today ? ' (Today)' : ''}</option>`).join('');
+  select.onchange = () => { currentSalesDate = select.value; renderDailySales(); };
+  const orders = completed.filter(order => completedDateKey(order) === currentSalesDate);
+  const total = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  $('#dailySalesSummary').innerHTML = `<div><small>COMPLETED ORDERS</small><strong>${orders.length}</strong></div><div><small>DAILY SALES</small><strong>${peso(total)}</strong></div>`;
+  $('#dailySalesOrders').innerHTML = orders.length ? orders.map(order => `<article class="orderCard salesRecord">
+    <div class="orderHead"><div><b>${escapeHtml(order.orderId || order.id)}</b><small>${escapeHtml(timestampText(order.completedAt || order.updatedAt || order.createdAt))}</small></div><span class="statusBadge">Completed</span></div>
+    <p><b>${escapeHtml(order.customerName)}</b> · ${escapeHtml(order.contact)}</p>
+    <div class="orderItems">${(order.items || []).map(item => `<span>${escapeHtml(item.name)} ×${item.quantity}</span>`).join('')}</div>
+    <div class="orderTotal">${peso(order.total)}</div>
+    <button class="danger deleteOrderBtn" data-delete-sales-order="${escapeHtml(order.id)}">🗑 Delete Completed Order</button>
+  </article>`).join('') : `<p class="emptyCategory">No completed sales for ${escapeHtml(salesDateLabel(currentSalesDate))}.</p>`;
+  document.querySelectorAll('[data-delete-sales-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteSalesOrder)));
 }
 
 async function loadOrders(showLoading = true) {
@@ -807,6 +877,8 @@ function stopAdminOrderUpdates() {
   unsubscribeAdminOrders = null;
   if (adminOrdersRefreshTimer) clearInterval(adminOrdersRefreshTimer);
   adminOrdersRefreshTimer = null;
+  if (midnightResetTimer) clearTimeout(midnightResetTimer);
+  midnightResetTimer = null;
   adminOrdersInitialized = false;
 }
 
@@ -817,7 +889,11 @@ function startAdminOrderUpdates() {
     .onSnapshot(snapshot => {
       if (adminOrdersInitialized) {
         const hasNewOrder = snapshot.docChanges().some(change => change.type === 'added' && change.doc.data().status === 'Pending');
-        if (hasNewOrder) playNotificationSound('order');
+        if (hasNewOrder) {
+          currentOrderFilter = 'Pending';
+          playNotificationSound('order');
+          toast('New order received!');
+        }
       } else {
         adminOrdersInitialized = true;
       }
@@ -830,6 +906,20 @@ function startAdminOrderUpdates() {
   adminOrdersRefreshTimer = setInterval(() => {
     if (isAdminUser()) loadOrders(false);
   }, 60 * 1000);
+  scheduleMidnightReset();
+}
+
+function scheduleMidnightReset() {
+  if (midnightResetTimer) clearTimeout(midnightResetTimer);
+  const now = new Date();
+  const manilaNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+  const nextMidnight = new Date(manilaNow);
+  nextMidnight.setHours(24, 0, 1, 0);
+  midnightResetTimer = setTimeout(() => {
+    currentSalesDate = philippineDateKey();
+    renderOrders();
+    scheduleMidnightReset();
+  }, Math.max(1000, nextMidnight - manilaNow));
 }
 
 async function handleStatusChange(select) {
@@ -857,6 +947,7 @@ async function updateOrderStatus(orderId, status, etaMinutes = null) {
       update.estimatedMinutes = firebase.firestore.FieldValue.delete();
       update.estimatedCompletionAt = firebase.firestore.FieldValue.delete();
     }
+    if (status === 'Completed') update.completedAt = firebase.firestore.FieldValue.serverTimestamp();
     batch.update(db.collection('orders').doc(orderId), update);
     batch.set(db.collection('tracking').doc(orderId), { orderId, ...update }, { merge: true });
     await batch.commit();
@@ -888,13 +979,20 @@ async function updateOrderEstimate(orderId, suggestedMinutes = 30) {
 }
 
 async function deleteCompletedOrder(orderId) {
-  if (!confirm(`Permanently delete this closed order ${orderId}? This cannot be undone.`)) return;
+  if (!confirm(`Permanently delete order ${orderId}? It will also be removed from the daily sales record. This cannot be undone.`)) return;
   try {
     const orderRef = db.collection('orders').doc(orderId);
     const orderDoc = await orderRef.get();
     if (!orderDoc.exists || !['Completed', 'Cancelled'].includes(orderDoc.data().status)) {
       toast('Only completed or cancelled orders can be deleted.');
       return;
+    }
+    while (true) {
+      const messages = await orderRef.collection('messages').limit(400).get();
+      if (messages.empty) break;
+      const messageBatch = db.batch();
+      messages.docs.forEach(message => messageBatch.delete(message.ref));
+      await messageBatch.commit();
     }
     const batch = db.batch();
     batch.delete(orderRef);
@@ -905,6 +1003,33 @@ async function deleteCompletedOrder(orderId) {
   } catch (error) {
     console.error(error);
     toast('Unable to delete order.');
+  }
+}
+
+async function deleteCompletedOrderChat(orderId) {
+  if (!confirm(`Delete all chat messages for completed order ${orderId}? The order and its sales record will remain.`)) return;
+  try {
+    const orderRef = db.collection('orders').doc(orderId);
+    const orderDoc = await orderRef.get();
+    if (!orderDoc.exists || orderDoc.data().status !== 'Completed') return toast('Chat can only be deleted after the order is completed.');
+    let deleted = 0;
+    while (true) {
+      const messages = await orderRef.collection('messages').limit(400).get();
+      if (messages.empty) break;
+      const batch = db.batch();
+      messages.docs.forEach(message => batch.delete(message.ref));
+      await batch.commit();
+      deleted += messages.size;
+    }
+    await orderRef.update({
+      chatArchived: true,
+      chatArchivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast(deleted ? 'Completed chat deleted. Sales record kept.' : 'Chat archived. Sales record kept.');
+  } catch (error) {
+    console.error(error);
+    toast('Unable to delete this chat. Check the updated Firestore rules.');
   }
 }
 
