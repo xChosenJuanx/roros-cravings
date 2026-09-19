@@ -33,7 +33,7 @@ service cloud.firestore {
         )
       ) && get(/databases/$(database)/documents/orders/$(orderId)).data.get('chatArchived', false) == false;
       allow delete: if isAdmin() &&
-        get(/databases/$(database)/documents/orders/$(orderId)).data.status == "Completed";
+        get(/databases/$(database)/documents/orders/$(orderId)).data.status in ["Completed", "Cancelled"];
       allow update: if false;
     }
 
