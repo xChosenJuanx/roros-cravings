@@ -28,6 +28,10 @@ let currentMenuCategory = 'Mains';
 let unsubscribeConversationOrders = null;
 let conversationMessageListeners = new Map();
 let conversationSummaries = new Map();
+let storeStatus = 'Available';
+let unsubscribeStoreStatus = null;
+let unsubscribeAdminOrders = null;
+let adminOrdersRefreshTimer = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
@@ -56,6 +60,39 @@ function toast(message) {
   el.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => { el.hidden = true; }, 2800);
+}
+
+const STORE_STATUS_DETAILS = {
+  Available: { message: 'We are accepting orders.', className: 'available' },
+  Busy: { message: 'We are busy right now. Orders may take a little longer.', className: 'busy' },
+  Closed: { message: 'We are currently closed and not accepting orders.', className: 'closed' }
+};
+
+function applyStoreStatus(status) {
+  storeStatus = STORE_STATUS_DETAILS[status] ? status : 'Available';
+  const details = STORE_STATUS_DETAILS[storeStatus];
+  const banner = $('#storeStatusBanner');
+  banner.className = `storeStatusBanner ${details.className}`;
+  $('#storeStatusText').textContent = storeStatus;
+  $('#storeStatusMessage').textContent = details.message;
+  $('#adminStoreStatus').value = storeStatus;
+  const closed = storeStatus === 'Closed';
+  $('#placeOrderBtn').disabled = closed;
+  $('#placeOrderBtn').textContent = closed ? 'Store is Closed' : 'Place Order';
+  document.querySelectorAll('.add').forEach(button => {
+    button.disabled = closed;
+    button.textContent = closed ? 'Store Closed' : '+ Add to Cart';
+  });
+}
+
+function startStoreStatusListener() {
+  if (unsubscribeStoreStatus) return;
+  unsubscribeStoreStatus = db.collection('settings').doc('store').onSnapshot(doc => {
+    applyStoreStatus(doc.exists ? doc.data().status : 'Available');
+  }, error => {
+    console.error('Store status listener failed', error);
+    applyStoreStatus('Available');
+  });
 }
 
 function showView(id) {
@@ -187,7 +224,7 @@ function renderMenu() {
     <article class="card">
       <img src="${escapeHtml(safeImage(p.image))}" alt="${escapeHtml(p.name)}" onerror="this.src='assets/logo.png'">
       <div class="cardBody"><h3>${escapeHtml(p.name)}</h3><div class="price">${peso(p.price)}</div>
-      <button class="add" data-add="${escapeHtml(p.id)}">+ Add to Cart</button></div>
+      <button class="add" data-add="${escapeHtml(p.id)}" ${storeStatus === 'Closed' ? 'disabled' : ''}>${storeStatus === 'Closed' ? 'Store Closed' : '+ Add to Cart'}</button></div>
     </article>`).join('') : '<p>No available products right now.</p>';
   document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => add(btn.dataset.add)));
 }
@@ -201,6 +238,7 @@ function getProduct(id) { return products.find(p => p.id === id); }
 function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
 
 function add(id) {
+  if (storeStatus === 'Closed') return toast('The store is currently closed.');
   cart[id] = (cart[id] || 0) + 1;
   updateTotals();
   toast('Added to cart');
@@ -349,6 +387,7 @@ function makeOrderId() {
 
 $('#checkout').addEventListener('submit', async event => {
   event.preventDefault();
+  if (storeStatus === 'Closed') return toast('The store is currently closed and cannot accept orders.');
   const t = totals();
   if (!t.quantity) return toast('Please add an item first.');
   if (!auth.currentUser || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL) {
@@ -542,15 +581,36 @@ auth.onAuthStateChanged(async user => {
   if (isAdmin) {
     $('#adminEmail').textContent = user.email;
     showView('adminView');
-    loadOrders();
+    startAdminOrderUpdates();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
+    stopAdminOrderUpdates();
     showView('shopView');
+  } else {
+    stopAdminOrderUpdates();
   }
 });
 
 $('#logoutBtn').addEventListener('click', () => auth.signOut());
-$('#refreshOrders').addEventListener('click', loadOrders);
+$('#refreshOrders').addEventListener('click', () => loadOrders(false));
+$('#adminStoreStatus').addEventListener('change', async event => {
+  const nextStatus = event.target.value;
+  event.target.disabled = true;
+  try {
+    await db.collection('settings').doc('store').set({
+      status: nextStatus,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: auth.currentUser?.email || ''
+    }, { merge: true });
+    toast(`Store is now ${nextStatus}`);
+  } catch (error) {
+    console.error(error);
+    event.target.value = storeStatus;
+    toast('Unable to update store status.');
+  } finally {
+    event.target.disabled = false;
+  }
+});
 
 function renderOrderCategories() {
   const filters = $('#orderStatusFilters');
@@ -596,8 +656,8 @@ function renderOrders() {
   document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
 }
 
-async function loadOrders() {
-  $('#ordersList').innerHTML = '<p class="loading">Loading orders…</p>';
+async function loadOrders(showLoading = true) {
+  if (showLoading) $('#ordersList').innerHTML = '<p class="loading">Loading orders…</p>';
   try {
     const snap = await db.collection('orders').orderBy('createdAt', 'desc').limit(200).get();
     cachedOrders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -608,6 +668,29 @@ async function loadOrders() {
   }
 }
 
+function stopAdminOrderUpdates() {
+  if (unsubscribeAdminOrders) unsubscribeAdminOrders();
+  unsubscribeAdminOrders = null;
+  if (adminOrdersRefreshTimer) clearInterval(adminOrdersRefreshTimer);
+  adminOrdersRefreshTimer = null;
+}
+
+function startAdminOrderUpdates() {
+  stopAdminOrderUpdates();
+  $('#ordersList').innerHTML = '<p class="loading">Connecting to live orders…</p>';
+  unsubscribeAdminOrders = db.collection('orders').orderBy('createdAt', 'desc').limit(200)
+    .onSnapshot(snapshot => {
+      cachedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderOrders();
+    }, error => {
+      console.error('Live orders failed', error);
+      loadOrders(false);
+    });
+  adminOrdersRefreshTimer = setInterval(() => {
+    if (isAdminUser()) loadOrders(false);
+  }, 2 * 60 * 1000);
+}
+
 async function updateOrderStatus(orderId, status) {
   try {
     const batch = db.batch();
@@ -616,7 +699,7 @@ async function updateOrderStatus(orderId, status) {
     batch.set(db.collection('tracking').doc(orderId), { orderId, ...update }, { merge: true });
     await batch.commit();
     toast(`Order marked ${status}`);
-    loadOrders();
+    loadOrders(false);
   } catch (error) { console.error(error); toast('Status update failed.'); }
 }
 
@@ -634,7 +717,7 @@ async function deleteCompletedOrder(orderId) {
     batch.delete(db.collection('tracking').doc(orderId));
     await batch.commit();
     toast('Order deleted.');
-    loadOrders();
+    loadOrders(false);
   } catch (error) {
     console.error(error);
     toast('Unable to delete order.');
@@ -694,4 +777,5 @@ async function deleteProduct(id) {
 
 loadProducts();
 updateTotals();
+startStoreStatusListener();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');

@@ -14,7 +14,9 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status == "Pending";
+        && request.resource.data.status == "Pending"
+        && (!exists(/databases/$(database)/documents/settings/store)
+          || get(/databases/$(database)/documents/settings/store).data.status != "Closed");
       allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
       allow update, delete: if isAdmin();
     }

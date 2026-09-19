@@ -29,6 +29,10 @@
       <section class="hero">
         <h2>What are you craving today?</h2>
         <p>Choose your favorites and we'll prepare them fresh.</p>
+        <div id="storeStatusBanner" class="storeStatusBanner available" role="status" aria-live="polite">
+          <span id="storeStatusDot" aria-hidden="true"></span>
+          <div><strong id="storeStatusText">Available</strong><small id="storeStatusMessage">We are accepting orders.</small></div>
+        </div>
       </section>
 
       <div id="menuCategories" class="menuCategories" aria-label="Menu categories">
@@ -64,6 +68,14 @@
       </div>
 
       <section id="ordersPanel" class="adminPanel active">
+        <div class="storeStatusAdmin">
+          <div><strong>Store Status</strong><small>Visible to customers on the main page</small></div>
+          <select id="adminStoreStatus" aria-label="Store status">
+            <option value="Available">Available</option>
+            <option value="Busy">Busy</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
         <div class="dashboardStats"><span id="pendingCount">0 Pending</span><button id="refreshOrders" class="secondary">↻ Refresh</button></div>
         <div id="orderStatusFilters" class="orderStatusFilters" aria-label="Order status categories"></div>
         <div id="categorySummary" class="categorySummary"></div>
