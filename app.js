@@ -41,6 +41,7 @@ let midnightResetTimer = null;
 let notificationSoundEnabled = localStorage.getItem('roros-notification-sound') !== 'off';
 let notificationAudioContext = null;
 let etaDialogResolver = null;
+let editingOrder = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
@@ -601,15 +602,14 @@ $('#checkout').addEventListener('submit', async event => {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     await batch.commit();
-    const summary = [`Roro's Cravings – Order ${orderId}`, ...items.map(i => `${i.name} x${i.quantity} — ${peso(i.lineTotal)}`), `TOTAL: ${peso(order.total)}`, `Payment: ${order.paymentMethod}`, `Name: ${order.customerName}`, `Address: ${order.address}`, ...(order.deliveryLocation ? [`Location: https://www.google.com/maps?q=${order.deliveryLocation.latitude},${order.deliveryLocation.longitude}`] : []), `Contact: ${order.contact}`].join('\n');
-    $('#orderSuccess').innerHTML = `<h3>✅ Order submitted!</h3><p>Your Order ID:</p><div class="orderId">${orderId}</div><p>Save this ID to track your order.</p><div class="buttonStack"><button id="copyOrderId" class="secondary">Copy Order ID</button><a class="primary linkButton" href="https://m.me/RorosCravingsDigos" target="_blank" rel="noopener">Open Messenger</a></div>`;
-    $('#orderSuccess').hidden = false;
-    event.target.hidden = true;
-    navigator.clipboard?.writeText(summary).catch(() => {});
-    $('#copyOrderId').addEventListener('click', () => navigator.clipboard.writeText(orderId).then(() => toast('Order ID copied')));
     Object.keys(cart).forEach(key => delete cart[key]);
     deliveryLocation = null;
     updateTotals();
+    event.target.reset();
+    $('#gcashInfo').hidden = true;
+    $('#cartDialog').close();
+    toast('Order submitted! Opening your order monitoring…');
+    await openOrderChat(orderId);
   } catch (error) {
     console.error(error);
     toast('Order failed. Check your internet and try again.');
@@ -864,6 +864,7 @@ function renderOrders() {
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>
       ${etaCountdownHtml(order, 'adminEta')}
+      ${order.status === 'Pending' ? `<button class="secondary editOrderBtn" data-edit-order="${escapeHtml(order.id)}">✏️ Edit Pending Order</button>` : ''}
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       ${['Confirmed', 'Preparing', 'Out for Delivery'].includes(order.status) ? `<button class="secondary updateEtaBtn" data-eta-order="${escapeHtml(order.id)}" data-eta-minutes="${remainingEtaMinutes(order)}">⏱ Update Estimated Time</button>` : ''}
       <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
@@ -875,9 +876,101 @@ function renderOrders() {
   document.querySelectorAll('[data-delete-chat]').forEach(button => button.addEventListener('click', () => deleteCompletedOrderChat(button.dataset.deleteChat)));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
   document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
+  document.querySelectorAll('[data-edit-order]').forEach(button => button.addEventListener('click', () => openOrderEditor(button.dataset.editOrder)));
   updateEtaCountdowns();
   renderDailySales();
 }
+
+function openOrderEditor(orderId) {
+  const order = cachedOrders.find(item => item.id === orderId);
+  if (!order || order.status !== 'Pending') return toast('Only pending orders can be edited.');
+  editingOrder = {
+    id: order.id,
+    orderId: order.orderId || order.id,
+    deliveryFee: Number(order.deliveryFee ?? DIGOS_DELIVERY_FEE),
+    items: (order.items || []).map(item => ({
+      productId: item.productId || '',
+      name: item.name || 'Item',
+      price: Number(item.price || 0),
+      quantity: Number(item.quantity || 0)
+    })).filter(item => item.quantity > 0)
+  };
+  $('#editOrderId').textContent = editingOrder.orderId;
+  renderOrderEditor();
+  $('#orderEditorDialog').showModal();
+}
+
+function renderOrderEditor() {
+  if (!editingOrder) return;
+  $('#editOrderItems').innerHTML = editingOrder.items.length ? editingOrder.items.map((item, index) => `
+    <div class="editOrderRow">
+      <div><strong>${escapeHtml(item.name)}</strong><small>${peso(item.price)} each</small></div>
+      <div class="editOrderControls">
+        <div class="qty"><button type="button" data-edit-index="${index}" data-edit-delta="-1">−</button><b>${item.quantity}</b><button type="button" data-edit-index="${index}" data-edit-delta="1">+</button></div>
+        <button class="removeEditItem" type="button" data-remove-edit-item="${index}">Remove</button>
+      </div>
+    </div>`).join('') : '<p class="error">At least one item is required.</p>';
+  const subtotal = editingOrder.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const delivery = subtotal ? editingOrder.deliveryFee : 0;
+  $('#editOrderSubtotal').textContent = peso(subtotal);
+  $('#editOrderDelivery').textContent = peso(delivery);
+  $('#editOrderTotal').textContent = peso(subtotal + delivery);
+  $('#saveOrderEdit').disabled = !editingOrder.items.length;
+  document.querySelectorAll('[data-edit-index]').forEach(button => button.addEventListener('click', () => {
+    const item = editingOrder.items[Number(button.dataset.editIndex)];
+    item.quantity += Number(button.dataset.editDelta);
+    if (item.quantity <= 0) editingOrder.items.splice(Number(button.dataset.editIndex), 1);
+    renderOrderEditor();
+  }));
+  document.querySelectorAll('[data-remove-edit-item]').forEach(button => button.addEventListener('click', () => {
+    editingOrder.items.splice(Number(button.dataset.removeEditItem), 1);
+    renderOrderEditor();
+  }));
+}
+
+function closeOrderEditor() {
+  editingOrder = null;
+  if ($('#orderEditorDialog').open) $('#orderEditorDialog').close();
+}
+
+$('#closeOrderEditor').addEventListener('click', closeOrderEditor);
+$('#cancelOrderEdit').addEventListener('click', closeOrderEditor);
+$('#orderEditorDialog').addEventListener('cancel', event => { event.preventDefault(); closeOrderEditor(); });
+$('#saveOrderEdit').addEventListener('click', async () => {
+  if (!editingOrder?.items.length) return toast('The order must have at least one item.');
+  const button = $('#saveOrderEdit');
+  button.disabled = true;
+  try {
+    const orderRef = db.collection('orders').doc(editingOrder.id);
+    const latest = await orderRef.get();
+    if (!latest.exists || latest.data().status !== 'Pending') throw new Error('This order is no longer pending.');
+    const items = editingOrder.items.map(item => ({ ...item, lineTotal: item.price * item.quantity }));
+    const subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    const deliveryFee = Number(editingOrder.deliveryFee || 0);
+    const total = subtotal + deliveryFee;
+    const summary = items.map(item => `${item.name} ×${item.quantity}`).join(', ');
+    const batch = db.batch();
+    batch.update(orderRef, {
+      items, subtotal, deliveryFee, total,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastEditedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.set(orderRef.collection('messages').doc(), {
+      text: `Your pending order was updated: ${summary}. New total: ${peso(total)}. Please review before confirmation.`,
+      senderId: auth.currentUser.uid,
+      senderName: "Roro's Cravings",
+      senderRole: 'admin',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await batch.commit();
+    closeOrderEditor();
+    toast('Pending order updated. The customer was notified in chat.');
+  } catch (error) {
+    console.error(error);
+    toast(error.message || 'Unable to update the order.');
+    button.disabled = false;
+  }
+});
 
 function renderDailySales() {
   const completed = cachedOrders.filter(order => order.status === 'Completed');
