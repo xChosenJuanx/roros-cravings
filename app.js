@@ -241,7 +241,6 @@ function startStoreStatusListener() {
 
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === id));
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === id));
   $('#cartBtn').hidden = id !== 'shopView';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -349,7 +348,6 @@ $('#messagesBtn').addEventListener('click', () => {
 });
 $('.closeConversations').addEventListener('click', () => $('#conversationDialog').close());
 
-document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
 document.querySelectorAll('.adminTab').forEach(tab => tab.addEventListener('click', () => {
   document.querySelectorAll('.adminTab').forEach(t => t.classList.toggle('active', t === tab));
   document.querySelectorAll('.adminPanel').forEach(p => p.classList.toggle('active', p.id === tab.dataset.admin));
@@ -544,7 +542,11 @@ async function registerPushFor(user) {
     await PushNotifications.addListener('registrationError', error => console.error('Push registration failed', error));
     await PushNotifications.addListener('pushNotificationActionPerformed', () => {
       if (user.email?.toLowerCase() === ADMIN_EMAIL) showView('adminView');
-      else showView('trackView');
+      else {
+        showView('shopView');
+        renderConversationHub();
+        if (!$('#conversationDialog').open) $('#conversationDialog').showModal();
+      }
     });
     await PushNotifications.register();
   } catch (error) {
@@ -619,27 +621,6 @@ $('#checkout').addEventListener('submit', async event => {
   } finally {
     button.disabled = false;
     button.textContent = 'Place Order';
-  }
-});
-
-$('#trackForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const id = $('#trackId').value.trim().toUpperCase();
-  const result = $('#trackResult');
-  result.hidden = false;
-  result.innerHTML = '<p class="loading">Checking order…</p>';
-  try {
-    const doc = await db.collection('tracking').doc(id).get();
-    if (!doc.exists) { result.innerHTML = '<p class="error">Order ID not found. Please check the ID and try again.</p>'; return; }
-    const data = doc.data();
-    const step = STATUSES.indexOf(data.status);
-    result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3><div class="statusBadge">${escapeHtml(data.status)}</div>
-      ${etaCountdownHtml(data)}
-      <div class="timeline">${STATUSES.slice(0, 5).map((s, i) => `<div class="timelineStep ${i <= step && step < 5 ? 'done' : ''}"><span></span>${s}</div>`).join('')}</div>
-      <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
-  } catch (error) {
-    console.error(error);
-    result.innerHTML = '<p class="error">Unable to check right now. Please try again.</p>';
   }
 });
 
