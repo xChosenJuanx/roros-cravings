@@ -145,7 +145,6 @@ function getAudioContext() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (AudioContextClass) notificationAudioContext = new AudioContextClass();
   }
-  if (notificationAudioContext?.state === 'suspended') notificationAudioContext.resume().catch(() => {});
   return notificationAudioContext;
 }
 
@@ -163,10 +162,14 @@ function playTone(context, frequency, start, duration, volume = 0.18, wave = 'si
   oscillator.stop(start + duration + 0.02);
 }
 
-function playNotificationSound(type = 'chat') {
-  if (!notificationSoundEnabled || document.visibilityState !== 'visible') return;
+async function playNotificationSound(type = 'chat') {
+  if (!notificationSoundEnabled) return false;
   const context = getAudioContext();
+  if (context?.state === 'suspended') {
+    try { await context.resume(); } catch (error) { console.warn('Notification audio is waiting for user interaction.', error); }
+  }
   if (context) {
+    if (context.state !== 'running') return false;
     const now = context.currentTime + 0.02;
     if (type === 'order') {
       Array.from({ length: 125 }, (_, index) => index * 0.24).forEach((offset, index) => {
@@ -179,21 +182,24 @@ function playNotificationSound(type = 'chat') {
     }
   }
   navigator.vibrate?.(type === 'order' ? Array.from({ length: 120 }, (_, index) => index % 2 ? 150 : 350) : [140, 80, 180]);
+  return Boolean(context);
 }
 
-$('#soundToggle').addEventListener('click', () => {
+$('#soundToggle').addEventListener('click', async () => {
   notificationSoundEnabled = !notificationSoundEnabled;
   localStorage.setItem('roros-notification-sound', notificationSoundEnabled ? 'on' : 'off');
   updateSoundToggle();
   if (notificationSoundEnabled) {
-    getAudioContext();
-    playNotificationSound('chat');
-    toast('Notification sound is on.');
+    const ready = await playNotificationSound('chat');
+    toast(ready ? 'Notification sound is on and ready.' : 'Tap Enable/Test Sound in the Admin Dashboard.');
   } else {
     toast('Notification sound is off.');
   }
 });
-document.addEventListener('pointerdown', () => { if (notificationSoundEnabled) getAudioContext(); }, { once: true });
+document.addEventListener('pointerdown', () => {
+  const context = notificationSoundEnabled && getAudioContext();
+  if (context?.state === 'suspended') context.resume().catch(() => {});
+});
 updateSoundToggle();
 
 const STORE_STATUS_DETAILS = {
@@ -793,6 +799,13 @@ auth.onAuthStateChanged(async user => {
 });
 
 $('#logoutBtn').addEventListener('click', () => auth.signOut());
+$('#testSoundBtn').addEventListener('click', async () => {
+  notificationSoundEnabled = true;
+  localStorage.setItem('roros-notification-sound', 'on');
+  updateSoundToggle();
+  const ready = await playNotificationSound('chat');
+  toast(ready ? 'Sound is enabled. Keep this PWA open for live alerts.' : 'The browser blocked audio. Check the site sound permission.');
+});
 $('#refreshOrders').addEventListener('click', () => loadOrders(false));
 $('#adminStoreStatus').addEventListener('change', async event => {
   const nextStatus = event.target.value;
