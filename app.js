@@ -12,6 +12,7 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 const storage = firebase.storage();
 const ADMIN_EMAIL = 'solidtagasogid26@gmail.com';
+const BUSINESS_PHONE = '09456988833';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const nativePlugins = window.Capacitor?.Plugins || {};
@@ -24,6 +25,7 @@ let currentOrderFilter = 'Pending';
 let deliveryLocation = null;
 let currentChatOrderId = null;
 let unsubscribeChat = null;
+let unsubscribeChatOrder = null;
 let currentMenuCategory = 'Mains';
 let unsubscribeConversationOrders = null;
 let conversationMessageListeners = new Map();
@@ -53,6 +55,23 @@ const peso = n => '₱' + Number(n || 0).toLocaleString('en-PH');
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[c]);
 const safeImage = value => /^(https:\/\/|assets\/)[^"'<>]+$/i.test(value || '') ? value : 'assets/logo.png';
 const timestampText = value => value?.toDate ? value.toDate().toLocaleString('en-PH') : 'Just now';
+
+function dateFromTimestamp(value) {
+  if (value?.toDate) return value.toDate();
+  if (value instanceof Date) return value;
+  return null;
+}
+
+function etaText(order) {
+  const eta = dateFromTimestamp(order?.estimatedCompletionAt);
+  if (!eta || ['Completed', 'Cancelled'].includes(order?.status)) return '';
+  return `Estimated ready/delivery: ${eta.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
+}
+
+function remainingEtaMinutes(order) {
+  const eta = dateFromTimestamp(order?.estimatedCompletionAt);
+  return eta ? Math.max(5, Math.round((eta.getTime() - Date.now()) / 60000)) : 30;
+}
 
 function toast(message) {
   const el = $('#toast');
@@ -464,6 +483,7 @@ $('#trackForm').addEventListener('submit', async event => {
     const data = doc.data();
     const step = STATUSES.indexOf(data.status);
     result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3><div class="statusBadge">${escapeHtml(data.status)}</div>
+      ${etaText(data) ? `<p class="chatEta">⏱ ${escapeHtml(etaText(data))}</p>` : ''}
       <div class="timeline">${STATUSES.slice(0, 5).map((s, i) => `<div class="timelineStep ${i <= step && step < 5 ? 'done' : ''}"><span></span>${s}</div>`).join('')}</div>
       <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
   } catch (error) {
@@ -475,7 +495,9 @@ $('#trackForm').addEventListener('submit', async event => {
 function closeOrderChat() {
   if (currentChatOrderId) markConversationRead(currentChatOrderId);
   if (unsubscribeChat) unsubscribeChat();
+  if (unsubscribeChatOrder) unsubscribeChatOrder();
   unsubscribeChat = null;
+  unsubscribeChatOrder = null;
   currentChatOrderId = null;
   $('#chatDialog').close();
 }
@@ -486,10 +508,22 @@ async function openOrderChat(orderId) {
     return toast('Please sign in before opening chat.');
   }
   if (unsubscribeChat) unsubscribeChat();
+  if (unsubscribeChatOrder) unsubscribeChatOrder();
   currentChatOrderId = orderId;
   $('#chatOrderId').textContent = orderId;
+  $('#chatOrderTracker').innerHTML = '<p class="loading">Loading order status…</p>';
   $('#chatMessages').innerHTML = '<p class="loading">Loading messages…</p>';
   $('#chatDialog').showModal();
+  unsubscribeChatOrder = db.collection('orders').doc(orderId).onSnapshot(doc => {
+    if (!doc.exists) {
+      $('#chatOrderTracker').innerHTML = '<p class="error">Order details are no longer available.</p>';
+      return;
+    }
+    renderChatOrderTracker({ id: doc.id, ...doc.data() });
+  }, error => {
+    console.error(error);
+    $('#chatOrderTracker').innerHTML = '<p class="error">Unable to load order status.</p>';
+  });
   unsubscribeChat = db.collection('orders').doc(orderId).collection('messages')
     .orderBy('createdAt', 'asc').limit(100)
     .onSnapshot(snapshot => {
@@ -512,9 +546,34 @@ $('.closeChat').addEventListener('click', closeOrderChat);
 $('#chatDialog').addEventListener('close', () => {
   if (currentChatOrderId) markConversationRead(currentChatOrderId);
   if (unsubscribeChat) unsubscribeChat();
+  if (unsubscribeChatOrder) unsubscribeChatOrder();
   unsubscribeChat = null;
+  unsubscribeChatOrder = null;
   currentChatOrderId = null;
 });
+
+function renderChatOrderTracker(order) {
+  const isAdmin = isAdminUser();
+  const mainStatuses = STATUSES.slice(0, 5);
+  const currentStep = mainStatuses.indexOf(order.status);
+  const phone = isAdmin ? String(order.contact || '').replace(/[^+\d]/g, '') : BUSINESS_PHONE;
+  const callLabel = isAdmin ? '📞 Call Customer' : "📞 Call Roro's Cravings";
+  const callTarget = isAdmin ? 'Customer' : "Roro's Cravings";
+  const itemSummary = (order.items || []).map(item => `${escapeHtml(item.name)} ×${Number(item.quantity || 0)}`).join(' · ');
+  const progress = order.status === 'Cancelled'
+    ? '<div class="cancelledTracker">This order has been cancelled.</div>'
+    : `<div class="chatStatusSteps">${mainStatuses.map((status, index) => `<div class="chatStatusStep ${index < currentStep ? 'done' : ''} ${index === currentStep ? 'current' : ''}"><span></span>${escapeHtml(status)}</div>`).join('')}</div>`;
+  $('#chatOrderTracker').innerHTML = `
+    <div class="chatTrackerHead"><strong>Order ${escapeHtml(order.orderId || order.id)}</strong><span class="statusBadge">${escapeHtml(order.status || 'Pending')}</span></div>
+    ${etaText(order) ? `<div class="chatEta">⏱ ${escapeHtml(etaText(order))}</div>` : ''}
+    ${progress}
+    <div class="chatOrderSummary">${itemSummary || 'Order items unavailable'}<br><b>Total: ${peso(order.total)}</b></div>
+    ${phone ? `<div class="chatActions"><a class="callButton" href="tel:${escapeHtml(phone)}" data-call-target="${escapeHtml(callTarget)}">${escapeHtml(callLabel)}</a></div>` : ''}`;
+  const callButton = $('#chatOrderTracker .callButton');
+  if (callButton) callButton.addEventListener('click', event => {
+    if (!confirm(`Call ${callButton.dataset.callTarget} now?`)) event.preventDefault();
+  });
+}
 $('#chatForm').addEventListener('submit', async event => {
   event.preventDefault();
   const text = $('#chatInput').value.trim();
@@ -647,11 +706,14 @@ function renderOrders() {
       <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>
+      ${etaText(order) ? `<p class="adminEta">⏱ ${escapeHtml(etaText(order))}</p>` : ''}
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      ${['Confirmed', 'Preparing', 'Out for Delivery'].includes(order.status) ? `<button class="secondary updateEtaBtn" data-eta-order="${escapeHtml(order.id)}" data-eta-minutes="${remainingEtaMinutes(order)}">⏱ Update Estimated Time</button>` : ''}
       <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
       ${['Completed', 'Cancelled'].includes(order.status) ? `<button class="danger deleteOrderBtn" data-delete-order="${escapeHtml(order.id)}">🗑 Delete ${escapeHtml(order.status)} Order</button>` : ''}
     </article>`).join('') : `<p class="emptyCategory">No ${escapeHtml(currentOrderFilter.toLowerCase())} orders.</p>`;
-  document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => updateOrderStatus(select.dataset.order, select.value)));
+  document.querySelectorAll('.statusSelect').forEach(select => select.addEventListener('change', () => handleStatusChange(select)));
+  document.querySelectorAll('[data-eta-order]').forEach(button => button.addEventListener('click', () => updateOrderEstimate(button.dataset.etaOrder, Number(button.dataset.etaMinutes || 30))));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
   document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
 }
@@ -691,16 +753,59 @@ function startAdminOrderUpdates() {
   }, 2 * 60 * 1000);
 }
 
-async function updateOrderStatus(orderId, status) {
+async function handleStatusChange(select) {
+  let etaMinutes = null;
+  if (select.value === 'Confirmed') {
+    const answer = prompt('Estimated preparation/delivery time in minutes:', '30');
+    if (answer === null) return renderOrders();
+    etaMinutes = Number(answer);
+    if (!Number.isFinite(etaMinutes) || etaMinutes < 5 || etaMinutes > 240) {
+      toast('Enter an estimated time from 5 to 240 minutes.');
+      return renderOrders();
+    }
+  }
+  await updateOrderStatus(select.dataset.order, select.value, etaMinutes);
+}
+
+async function updateOrderStatus(orderId, status, etaMinutes = null) {
   try {
     const batch = db.batch();
     const update = { status, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    if (etaMinutes) {
+      update.estimatedMinutes = etaMinutes;
+      update.estimatedCompletionAt = firebase.firestore.Timestamp.fromMillis(Date.now() + etaMinutes * 60000);
+    } else if (['Completed', 'Cancelled'].includes(status)) {
+      update.estimatedMinutes = firebase.firestore.FieldValue.delete();
+      update.estimatedCompletionAt = firebase.firestore.FieldValue.delete();
+    }
     batch.update(db.collection('orders').doc(orderId), update);
     batch.set(db.collection('tracking').doc(orderId), { orderId, ...update }, { merge: true });
     await batch.commit();
     toast(`Order marked ${status}`);
     loadOrders(false);
   } catch (error) { console.error(error); toast('Status update failed.'); }
+}
+
+async function updateOrderEstimate(orderId, suggestedMinutes = 30) {
+  const answer = prompt('New estimated time from now, in minutes:', String(suggestedMinutes));
+  if (answer === null) return;
+  const minutes = Number(answer);
+  if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) return toast('Enter an estimated time from 5 to 240 minutes.');
+  try {
+    const update = {
+      estimatedMinutes: minutes,
+      estimatedCompletionAt: firebase.firestore.Timestamp.fromMillis(Date.now() + minutes * 60000),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    const batch = db.batch();
+    batch.update(db.collection('orders').doc(orderId), update);
+    batch.set(db.collection('tracking').doc(orderId), update, { merge: true });
+    await batch.commit();
+    toast('Estimated time updated.');
+  } catch (error) {
+    console.error(error);
+    toast('Unable to update estimated time.');
+  }
 }
 
 async function deleteCompletedOrder(orderId) {
