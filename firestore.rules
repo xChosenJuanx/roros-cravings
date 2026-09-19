@@ -22,11 +22,19 @@ service cloud.firestore {
     }
 
     match /orders/{orderId}/messages/{messageId} {
-      allow read, create: if isAdmin() || (
+      allow read: if isAdmin() || (
         signedIn() &&
         get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid
       );
-      allow update, delete: if false;
+      allow create: if (
+        isAdmin() || (
+          signedIn() &&
+          get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid
+        )
+      ) && get(/databases/$(database)/documents/orders/$(orderId)).data.get('chatArchived', false) == false;
+      allow delete: if isAdmin() &&
+        get(/databases/$(database)/documents/orders/$(orderId)).data.status == "Completed";
+      allow update: if false;
     }
 
     match /tracking/{trackingId} {
