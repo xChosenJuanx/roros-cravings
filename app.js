@@ -40,6 +40,7 @@ let currentSalesDate = '';
 let midnightResetTimer = null;
 let notificationSoundEnabled = localStorage.getItem('roros-notification-sound') !== 'off';
 let notificationAudioContext = null;
+let etaDialogResolver = null;
 
 const fallbackProducts = [
   { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
@@ -93,6 +94,31 @@ function etaText(order) {
   return `Estimated ready/delivery: ${eta.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`;
 }
 
+function etaCountdownHtml(order, className = 'chatEta') {
+  const eta = dateFromTimestamp(order?.estimatedCompletionAt);
+  if (!eta || ['Completed', 'Cancelled'].includes(order?.status)) return '';
+  return `<p class="${className} etaCountdown" data-eta-target="${eta.getTime()}">⏱ <span>Calculating…</span></p>`;
+}
+
+function updateEtaCountdowns() {
+  document.querySelectorAll('.etaCountdown[data-eta-target]').forEach(element => {
+    const remaining = Number(element.dataset.etaTarget) - Date.now();
+    const output = element.querySelector('span');
+    if (!output) return;
+    if (remaining <= 0) {
+      output.textContent = 'Finishing shortly…';
+      return;
+    }
+    const totalSeconds = Math.ceil(remaining / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    output.textContent = `Estimated time remaining: ${hours ? `${hours}:` : ''}${String(minutes).padStart(hours ? 2 : 1, '0')}:${String(seconds).padStart(2, '0')}`;
+  });
+}
+
+setInterval(updateEtaCountdowns, 1000);
+
 function remainingEtaMinutes(order) {
   const eta = dateFromTimestamp(order?.estimatedCompletionAt);
   return eta ? Math.max(5, Math.round((eta.getTime() - Date.now()) / 60000)) : 30;
@@ -143,7 +169,7 @@ function playNotificationSound(type = 'chat') {
   if (context) {
     const now = context.currentTime + 0.02;
     if (type === 'order') {
-      [0, 0.24, 0.48, 0.72, 0.96, 1.2, 1.44, 1.68, 1.92, 2.16].forEach((offset, index) => {
+      Array.from({ length: 125 }, (_, index) => index * 0.24).forEach((offset, index) => {
         playTone(context, index % 2 ? 1120 : 520, now + offset, 0.21, 0.72, 'square');
         playTone(context, index % 2 ? 560 : 780, now + offset, 0.21, 0.34, 'sawtooth');
       });
@@ -152,7 +178,7 @@ function playNotificationSound(type = 'chat') {
       playTone(context, 980, now + 0.2, 0.2, 0.18);
     }
   }
-  navigator.vibrate?.(type === 'order' ? [350, 100, 350, 100, 350, 100, 650] : [140, 80, 180]);
+  navigator.vibrate?.(type === 'order' ? Array.from({ length: 120 }, (_, index) => index % 2 ? 150 : 350) : [140, 80, 180]);
 }
 
 $('#soundToggle').addEventListener('click', () => {
@@ -599,7 +625,7 @@ $('#trackForm').addEventListener('submit', async event => {
     const data = doc.data();
     const step = STATUSES.indexOf(data.status);
     result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3><div class="statusBadge">${escapeHtml(data.status)}</div>
-      ${etaText(data) ? `<p class="chatEta">⏱ ${escapeHtml(etaText(data))}</p>` : ''}
+      ${etaCountdownHtml(data)}
       <div class="timeline">${STATUSES.slice(0, 5).map((s, i) => `<div class="timelineStep ${i <= step && step < 5 ? 'done' : ''}"><span></span>${s}</div>`).join('')}</div>
       <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
   } catch (error) {
@@ -681,7 +707,7 @@ function renderChatOrderTracker(order) {
     : `<div class="chatStatusSteps">${mainStatuses.map((status, index) => `<div class="chatStatusStep ${index < currentStep ? 'done' : ''} ${index === currentStep ? 'current' : ''}"><span></span>${escapeHtml(status)}</div>`).join('')}</div>`;
   $('#chatOrderTracker').innerHTML = `
     <div class="chatTrackerHead"><strong>Order ${escapeHtml(order.orderId || order.id)}</strong><span class="statusBadge">${escapeHtml(order.status || 'Pending')}</span></div>
-    ${etaText(order) ? `<div class="chatEta">⏱ ${escapeHtml(etaText(order))}</div>` : ''}
+    ${etaCountdownHtml(order)}
     ${progress}
     <div class="chatOrderSummary">${itemSummary || 'Order items unavailable'}<br><b>Total: ${peso(order.total)}</b></div>
     ${phone ? `<div class="chatActions"><a class="callButton" href="tel:${escapeHtml(phone)}" data-call-target="${escapeHtml(callTarget)}">${escapeHtml(callLabel)}</a></div>` : ''}`;
@@ -824,7 +850,7 @@ function renderOrders() {
       <div class="orderItems">${(order.items || []).map(i => `<span>${escapeHtml(i.name)} ×${i.quantity}</span>`).join('')}</div>
       ${order.notes ? `<p class="notes">Note: ${escapeHtml(order.notes)}</p>` : ''}
       <div class="orderTotal">Total: ${peso(order.total)}</div>
-      ${etaText(order) ? `<p class="adminEta">⏱ ${escapeHtml(etaText(order))}</p>` : ''}
+      ${etaCountdownHtml(order, 'adminEta')}
       <label>Update status<select class="statusSelect" data-order="${escapeHtml(order.id)}">${STATUSES.map(s => `<option ${s === order.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
       ${['Confirmed', 'Preparing', 'Out for Delivery'].includes(order.status) ? `<button class="secondary updateEtaBtn" data-eta-order="${escapeHtml(order.id)}" data-eta-minutes="${remainingEtaMinutes(order)}">⏱ Update Estimated Time</button>` : ''}
       <button class="secondary orderChatBtn" data-chat-order="${escapeHtml(order.id)}">💬 Chat with Customer</button>
@@ -836,6 +862,7 @@ function renderOrders() {
   document.querySelectorAll('[data-delete-chat]').forEach(button => button.addEventListener('click', () => deleteCompletedOrderChat(button.dataset.deleteChat)));
   document.querySelectorAll('[data-delete-order]').forEach(button => button.addEventListener('click', () => deleteCompletedOrder(button.dataset.deleteOrder)));
   document.querySelectorAll('[data-chat-order]').forEach(button => button.addEventListener('click', () => openOrderChat(button.dataset.chatOrder)));
+  updateEtaCountdowns();
   renderDailySales();
 }
 
@@ -925,16 +952,41 @@ function scheduleMidnightReset() {
 async function handleStatusChange(select) {
   let etaMinutes = null;
   if (select.value === 'Confirmed') {
-    const answer = prompt('Estimated preparation/delivery time in minutes:', '30');
-    if (answer === null) return renderOrders();
-    etaMinutes = Number(answer);
-    if (!Number.isFinite(etaMinutes) || etaMinutes < 5 || etaMinutes > 240) {
-      toast('Enter an estimated time from 5 to 240 minutes.');
-      return renderOrders();
-    }
+    etaMinutes = await chooseEtaMinutes(30);
+    if (etaMinutes === null) return renderOrders();
   }
   await updateOrderStatus(select.dataset.order, select.value, etaMinutes);
 }
+
+function chooseEtaMinutes(suggestedMinutes = 30) {
+  const dialog = $('#etaDialog');
+  const select = $('#etaMinutesSelect');
+  const choices = [...select.options].map(option => Number(option.value));
+  select.value = String(choices.reduce((closest, value) =>
+    Math.abs(value - suggestedMinutes) < Math.abs(closest - suggestedMinutes) ? value : closest, choices[0]));
+  dialog.showModal();
+  return new Promise(resolve => { etaDialogResolver = resolve; });
+}
+
+function closeEtaDialog(value = null) {
+  if ($('#etaDialog').open) $('#etaDialog').close();
+  if (etaDialogResolver) {
+    const resolve = etaDialogResolver;
+    etaDialogResolver = null;
+    resolve(value);
+  }
+}
+
+$('#etaForm').addEventListener('submit', event => {
+  event.preventDefault();
+  closeEtaDialog(Number($('#etaMinutesSelect').value));
+});
+$('#closeEtaDialog').addEventListener('click', () => closeEtaDialog());
+$('#cancelEtaDialog').addEventListener('click', () => closeEtaDialog());
+$('#etaDialog').addEventListener('cancel', event => {
+  event.preventDefault();
+  closeEtaDialog();
+});
 
 async function updateOrderStatus(orderId, status, etaMinutes = null) {
   try {
@@ -957,10 +1009,8 @@ async function updateOrderStatus(orderId, status, etaMinutes = null) {
 }
 
 async function updateOrderEstimate(orderId, suggestedMinutes = 30) {
-  const answer = prompt('New estimated time from now, in minutes:', String(suggestedMinutes));
-  if (answer === null) return;
-  const minutes = Number(answer);
-  if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) return toast('Enter an estimated time from 5 to 240 minutes.');
+  const minutes = await chooseEtaMinutes(suggestedMinutes);
+  if (minutes === null) return;
   try {
     const update = {
       estimatedMinutes: minutes,
