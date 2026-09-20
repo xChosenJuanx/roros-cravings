@@ -46,7 +46,6 @@ let etaDialogResolver = null;
 let editingOrder = null;
 
 const fallbackProducts = [
-  { id: 'hungarian', name: 'Hungarian Sausage Rice', price: 120, image: 'assets/hungarian.png', available: true, category: 'Mains' },
   { id: 'samgyup', name: 'Samgyupsal Platter', price: 160, image: 'assets/samgyup.png', available: true, category: 'Mains' },
   { id: 'soy-garlic', name: 'Soy Garlic Chicken', price: 110, image: 'assets/soy-garlic.png', available: true, category: 'Mains' },
   { id: 'shawarma', name: 'Shawarma Rice', price: 110, image: 'assets/shawarma.png', available: true, category: 'Mains' },
@@ -55,6 +54,26 @@ const fallbackProducts = [
   { id: 'gochujang', name: 'Gochujang Glazed Chicken', price: 110, image: 'assets/gochujang.png', available: true, category: 'Mains' },
   { id: 'chick-fries', name: "Chick 'N Fries", price: 110, image: 'assets/chick-fries.png', available: true, category: 'Mains' }
 ];
+
+const CATALOG_V31_ADDITIONS = [
+  { id: 'kimbap', name: 'Kimbap', image: 'assets/kimbap.jpg', category: 'Mains' },
+  { id: 'jjajangbap', name: 'Jjajangbap', image: 'assets/jjajangbap.jpg', category: 'Mains' },
+  { id: 'coke-sakto', name: 'Coke Sakto', image: 'assets/coke-sakto.jpg', category: 'Beverage' },
+  { id: 'sprite-sakto', name: 'Sprite Sakto', image: 'assets/sprite-sakto.jpg', category: 'Beverage' },
+  { id: 'royal-sakto', name: 'Royal Sakto', image: 'assets/royal-sakto.jpg', category: 'Beverage' },
+  { id: 'coke-vanilla', name: 'Coke Vanilla', image: 'assets/coke-vanilla.jpg', category: 'Beverage' },
+  { id: 'bottled-water', name: 'Bottled Water (500ml)', image: 'assets/bottled-water.jpg', category: 'Beverage' },
+  { id: 'coffee-jelly', name: 'Coffee Jelly', image: 'assets/coffee-jelly.jpg', category: 'Beverage' },
+  { id: 'pineapple-juice', name: 'Del Monte Pineapple Juice', image: 'assets/pineapple-juice.jpg', category: 'Beverage' },
+  { id: 'tocilog', name: 'Tocilog', image: 'assets/tocilog.jpg', category: 'Silog Meals' },
+  { id: 'longsilog', name: 'Longsilog', image: 'assets/longsilog.jpg', category: 'Silog Meals' },
+  { id: 'tapsilog', name: 'Tapsilog', image: 'assets/tapsilog.jpg', category: 'Silog Meals' },
+  { id: 'hotsilog', name: 'Hotsilog', image: 'assets/hotsilog.jpg', category: 'Silog Meals' },
+  { id: 'cornsilog', name: 'Cornsilog', image: 'assets/cornsilog.jpg', category: 'Silog Meals' },
+  { id: 'chiksilog', name: 'Chiksilog', image: 'assets/chiksilog.jpg', category: 'Silog Meals' },
+  { id: 'shangsilog', name: 'Shangsilog', image: 'assets/shangsilog.jpg', category: 'Silog Meals' }
+].map(product => ({ ...product, price: 0, available: true }));
+fallbackProducts.push(...CATALOG_V31_ADDITIONS);
 
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
@@ -175,7 +194,7 @@ async function playNotificationSound(type = 'chat') {
     if (context.state !== 'running') return false;
     const now = context.currentTime + 0.02;
     if (type === 'order') {
-      Array.from({ length: 125 }, (_, index) => index * 0.24).forEach((offset, index) => {
+      Array.from({ length: 63 }, (_, index) => index * 0.24).forEach((offset, index) => {
         playTone(context, index % 2 ? 1120 : 520, now + offset, 0.21, 0.72, 'square');
         playTone(context, index % 2 ? 560 : 780, now + offset, 0.21, 0.34, 'sawtooth');
       });
@@ -187,7 +206,7 @@ async function playNotificationSound(type = 'chat') {
       });
     }
   }
-  navigator.vibrate?.(type === 'order' ? Array.from({ length: 120 }, (_, index) => index % 2 ? 150 : 350) : [140, 80, 180]);
+  navigator.vibrate?.(type === 'order' ? Array.from({ length: 60 }, (_, index) => index % 2 ? 150 : 350) : [140, 80, 180]);
   return Boolean(context);
 }
 
@@ -405,14 +424,57 @@ async function loadProducts() {
   if (auth.currentUser) renderAdminProducts();
 }
 
+async function synchronizeCatalogV31() {
+  const markerRef = db.collection('settings').doc('catalog-v31');
+  try {
+    const changed = await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return false;
+      const entries = await Promise.all(CATALOG_V31_ADDITIONS.map(async product => ({
+        product,
+        ref: db.collection('products').doc(product.id),
+        snapshot: await transaction.get(db.collection('products').doc(product.id))
+      })));
+      entries.forEach(({ product, ref, snapshot }) => {
+        if (!snapshot.exists) transaction.set(ref, {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      transaction.delete(db.collection('products').doc('hungarian'));
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      return true;
+    });
+    if (changed) toast('New menu products are ready. Add their prices in Menu Editor.');
+  } catch (error) {
+    console.error('Unable to synchronize the v3.1 menu catalog.', error);
+    toast('Unable to add the new menu products. Please refresh and try again.');
+  }
+}
+
 function renderMenu() {
-  const available = products.filter(p => p.available !== false && (p.category || 'Mains') === currentMenuCategory);
-  $('#menu').innerHTML = available.length ? available.map(p => `
-    <article class="card">
+  const categoryProducts = products.filter(p => (p.category || 'Mains') === currentMenuCategory);
+  $('#menu').innerHTML = categoryProducts.length ? categoryProducts.map(p => {
+    const unavailable = p.available === false;
+    const awaitingPrice = Number(p.price || 0) <= 0;
+    const disabled = unavailable || awaitingPrice || storeStatus === 'Closed';
+    const buttonText = unavailable ? 'Unavailable' : awaitingPrice ? 'Price Coming Soon' : storeStatus === 'Closed' ? 'Store Closed' : '+ Add to Cart';
+    return `
+    <article class="card ${unavailable || awaitingPrice ? 'productUnavailable' : ''}">
       <img src="${escapeHtml(safeImage(p.image))}" alt="${escapeHtml(p.name)}" onerror="this.src='assets/logo.png'">
-      <div class="cardBody"><h3>${escapeHtml(p.name)}</h3><div class="price">${peso(p.price)}</div>
-      <button class="add" data-add="${escapeHtml(p.id)}" ${storeStatus === 'Closed' ? 'disabled' : ''}>${storeStatus === 'Closed' ? 'Store Closed' : '+ Add to Cart'}</button></div>
-    </article>`).join('') : '<p>No available products right now.</p>';
+      ${unavailable ? '<span class="unavailableBadge">Unavailable</span>' : ''}
+      <div class="cardBody"><h3>${escapeHtml(p.name)}</h3><div class="price">${awaitingPrice ? 'Price coming soon' : peso(p.price)}</div>
+      <button class="add" data-add="${escapeHtml(p.id)}" ${disabled ? 'disabled' : ''}>${buttonText}</button></div>
+    </article>`;
+  }).join('') : '<p>No products in this category yet.</p>';
   document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => add(btn.dataset.add)));
 }
 document.querySelectorAll('[data-menu-category]').forEach(button => button.addEventListener('click', () => {
@@ -426,6 +488,8 @@ function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
 
 function add(id) {
   if (storeStatus === 'Closed') return toast('The store is currently closed.');
+  const product = getProduct(id);
+  if (!product || product.available === false || Number(product.price || 0) <= 0) return toast('This item is currently unavailable.');
   if (!$('#orderSuccess').hidden) resetCheckoutForNewOrder();
   cart[id] = (cart[id] || 0) + 1;
   updateTotals();
@@ -828,6 +892,7 @@ auth.onAuthStateChanged(async user => {
     $('#adminEmail').textContent = user.email;
     showView('adminView');
     startAdminOrderUpdates();
+    await synchronizeCatalogV31();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
@@ -1251,9 +1316,29 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  $('#adminProducts').innerHTML = products.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category || 'Mains')} · ${peso(p.price)} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('');
+  $('#adminProducts').innerHTML = products.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category || 'Mains')} · ${Number(p.price || 0) > 0 ? peso(p.price) : 'No price yet'} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button class="availabilityBtn ${p.available === false ? 'unavailable' : ''}" data-toggle-product="${escapeHtml(p.id)}">${p.available === false ? 'Set Available' : 'Set Unavailable'}</button><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('');
+  document.querySelectorAll('[data-toggle-product]').forEach(btn => btn.addEventListener('click', () => toggleProductAvailability(btn.dataset.toggleProduct)));
   document.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => editProduct(btn.dataset.editProduct)));
   document.querySelectorAll('[data-delete-product]').forEach(btn => btn.addEventListener('click', () => deleteProduct(btn.dataset.deleteProduct)));
+}
+
+async function toggleProductAvailability(id) {
+  const product = getProduct(id);
+  if (!product) return;
+  const button = document.querySelector(`[data-toggle-product="${CSS.escape(id)}"]`);
+  if (button) button.disabled = true;
+  try {
+    await db.collection('products').doc(id).set({
+      available: product.available === false,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    toast(product.available === false ? 'Product is now available.' : 'Product marked unavailable.');
+    await loadProducts();
+  } catch (error) {
+    console.error(error);
+    toast('Unable to change product availability.');
+    if (button) button.disabled = false;
+  }
 }
 
 function editProduct(id) {
