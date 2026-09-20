@@ -1351,7 +1351,23 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  $('#adminProducts').innerHTML = products.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.category || 'Mains')} · ${Number(p.price || 0) > 0 ? peso(p.price) : 'No price yet'} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button class="availabilityBtn ${p.available === false ? 'unavailable' : ''}" data-toggle-product="${escapeHtml(p.id)}">${p.available === false ? 'Set Available' : 'Set Unavailable'}</button><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('');
+  const categoryOrder = ['Mains', 'Silog Meals', 'Beverage', 'Sides'];
+  const categoryIcons = { Mains: '🍽️', 'Silog Meals': '🍳', Beverage: '🥤', Sides: '🍟' };
+  const groupedProducts = products.reduce((groups, product) => {
+    const category = product.category || 'Mains';
+    if (!groups[category]) groups[category] = [];
+    groups[category].push(product);
+    return groups;
+  }, {});
+  const categories = [
+    ...categoryOrder,
+    ...Object.keys(groupedProducts).filter(category => !categoryOrder.includes(category)).sort()
+  ];
+  $('#adminProducts').innerHTML = categories.map(category => {
+    const items = groupedProducts[category] || [];
+    const productRows = items.length ? items.map(p => `<article class="productAdmin"><img src="${escapeHtml(safeImage(p.image))}" onerror="this.src='assets/logo.png'" alt=""><div><b>${escapeHtml(p.name)}</b><small>${Number(p.price || 0) > 0 ? peso(p.price) : 'No price yet'} · ${p.available === false ? 'Unavailable' : 'Available'}</small></div><button class="availabilityBtn ${p.available === false ? 'unavailable' : ''}" data-toggle-product="${escapeHtml(p.id)}">${p.available === false ? 'Set Available' : 'Set Unavailable'}</button><button data-edit-product="${escapeHtml(p.id)}">Edit</button><button class="danger" data-delete-product="${escapeHtml(p.id)}">Delete</button></article>`).join('') : '<p class="emptyProductCategory">No products in this category yet.</p>';
+    return `<details class="productCategoryGroup"><summary><span class="productCategoryTitle"><b>${categoryIcons[category] || '📦'} ${escapeHtml(category)}</b><small>${items.length} ${items.length === 1 ? 'item' : 'items'}</small></span><span class="productCategoryToggle" aria-hidden="true"></span></summary><div class="productCategoryItems">${productRows}</div></details>`;
+  }).join('');
   document.querySelectorAll('[data-toggle-product]').forEach(btn => btn.addEventListener('click', () => toggleProductAvailability(btn.dataset.toggleProduct)));
   document.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => editProduct(btn.dataset.editProduct)));
   document.querySelectorAll('[data-delete-product]').forEach(btn => btn.addEventListener('click', () => deleteProduct(btn.dataset.deleteProduct)));
