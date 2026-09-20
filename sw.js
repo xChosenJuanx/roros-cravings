@@ -1,4 +1,4 @@
-const CACHE = 'roros-v21-silog-availability';
+const CACHE = 'roros-v22-restore-original-menu';
 const ASSETS = [
   './','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/gcash-qr.png',
   'assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png',

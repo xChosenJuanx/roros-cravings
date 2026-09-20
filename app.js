@@ -54,6 +54,7 @@ const fallbackProducts = [
   { id: 'gochujang', name: 'Gochujang Glazed Chicken', price: 110, image: 'assets/gochujang.png', available: true, category: 'Mains' },
   { id: 'chick-fries', name: "Chick 'N Fries", price: 110, image: 'assets/chick-fries.png', available: true, category: 'Mains' }
 ];
+const ORIGINAL_MENU_PRODUCTS = fallbackProducts.map(product => ({ ...product }));
 
 const CATALOG_V31_ADDITIONS = [
   { id: 'kimbap', name: 'Kimbap', image: 'assets/kimbap.jpg', category: 'Mains' },
@@ -457,6 +458,39 @@ async function synchronizeCatalogV31() {
   } catch (error) {
     console.error('Unable to synchronize the v3.1 menu catalog.', error);
     toast('Unable to add the new menu products. Please refresh and try again.');
+  }
+}
+
+async function restoreOriginalCatalogV32() {
+  const markerRef = db.collection('settings').doc('catalog-v32-original-products');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const entries = await Promise.all(ORIGINAL_MENU_PRODUCTS.map(async product => ({
+        product,
+        ref: db.collection('products').doc(product.id),
+        snapshot: await transaction.get(db.collection('products').doc(product.id))
+      })));
+      entries.forEach(({ product, ref, snapshot }) => {
+        if (!snapshot.exists) transaction.set(ref, {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to restore the original menu catalog.', error);
+    toast('Unable to restore the original menu. Please refresh and try again.');
   }
 }
 
@@ -893,6 +927,7 @@ auth.onAuthStateChanged(async user => {
     showView('adminView');
     startAdminOrderUpdates();
     await synchronizeCatalogV31();
+    await restoreOriginalCatalogV32();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
