@@ -677,18 +677,33 @@ $('#cartBtn').addEventListener('click', () => {
 $('.closeDialog').addEventListener('click', () => $('#cartDialog').close());
 $('#paymentMethod').addEventListener('change', e => { $('#gcashInfo').hidden = e.target.value !== 'GCash'; });
 
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    try {
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      input.setSelectionRange(0, input.value.length);
+      const copied = document.execCommand('copy');
+      input.remove();
+      return copied;
+    } catch (fallbackError) {
+      console.warn('Clipboard copy was blocked.', fallbackError);
+      return false;
+    }
+  }
+}
+
 $('#copyGcashNumber').addEventListener('click', async () => {
   const number = $('#gcashNumber').textContent.trim();
-  try {
-    await navigator.clipboard.writeText(number);
-  } catch (error) {
-    const input = document.createElement('input');
-    input.value = number;
-    document.body.appendChild(input);
-    input.select();
-    document.execCommand('copy');
-    input.remove();
-  }
+  await copyTextToClipboard(number);
   $('#copyGcashNumber').textContent = '✅ GCash Number Copied';
   toast('GCash number copied: 09272995716');
   setTimeout(() => { $('#copyGcashNumber').textContent = '📋 Copy GCash Number'; }, 1800);
@@ -817,7 +832,10 @@ $('#checkout').addEventListener('submit', async event => {
     event.target.reset();
     $('#gcashInfo').hidden = true;
     $('#cartDialog').close();
-    toast('Order submitted! Opening your order monitoring…');
+    const orderIdCopied = await copyTextToClipboard(orderId);
+    toast(orderIdCopied
+      ? `Order submitted! ${orderId} was copied automatically.`
+      : `Order submitted! Please save your Order ID: ${orderId}`);
     await openOrderChat(orderId);
   } catch (error) {
     console.error(error);
