@@ -76,6 +76,11 @@ const CATALOG_V31_ADDITIONS = [
 ].map(product => ({ ...product, price: 0, available: true }));
 fallbackProducts.push(...CATALOG_V31_ADDITIONS);
 
+const CATALOG_V33_ADDITIONS = [
+  { id: 'jjajangmyeon', name: 'Jjajangmyeon', price: 150, image: 'assets/jjajangmyeon.jpg', category: 'Mains', available: true }
+];
+fallbackProducts.push(...CATALOG_V33_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
@@ -491,6 +496,35 @@ async function restoreOriginalCatalogV32() {
   } catch (error) {
     console.error('Unable to restore the original menu catalog.', error);
     toast('Unable to restore the original menu. Please refresh and try again.');
+  }
+}
+
+async function synchronizeCatalogV33() {
+  const markerRef = db.collection('settings').doc('catalog-v33-jjajangmyeon');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const product = CATALOG_V33_ADDITIONS[0];
+      const productRef = db.collection('products').doc(product.id);
+      const productSnapshot = await transaction.get(productRef);
+      if (!productSnapshot.exists) transaction.set(productRef, {
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        category: product.category,
+        available: product.available,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to add Jjajangmyeon to the menu.', error);
+    toast('Unable to add Jjajangmyeon. Please refresh and try again.');
   }
 }
 
@@ -928,6 +962,7 @@ auth.onAuthStateChanged(async user => {
     startAdminOrderUpdates();
     await synchronizeCatalogV31();
     await restoreOriginalCatalogV32();
+    await synchronizeCatalogV33();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
