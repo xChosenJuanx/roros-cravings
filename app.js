@@ -826,6 +826,19 @@ $('#checkout').addEventListener('submit', async event => {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     await batch.commit();
+    try {
+      await db.collection('orders').doc(orderId).collection('messages').add({
+        text: `Your Order ${orderId} has been placed.`,
+        senderId: 'system',
+        senderName: "Roro's Cravings",
+        senderRole: 'system',
+        messageType: 'order-placed',
+        orderStatus: 'Pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (messageError) {
+      console.warn('Order was placed, but the automatic chat message could not be sent.', messageError);
+    }
     Object.keys(cart).forEach(key => delete cart[key]);
     deliveryLocation = null;
     updateTotals();
