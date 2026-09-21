@@ -81,6 +81,12 @@ const CATALOG_V33_ADDITIONS = [
 ];
 fallbackProducts.push(...CATALOG_V33_ADDITIONS);
 
+const CATALOG_V34_ADDITIONS = [
+  { id: 'fishcake-on-stick', name: 'Fishcake on Stick', price: 150, image: 'assets/fishcake-on-stick.jpg', category: 'Mains', available: true },
+  { id: 'tteokbokki', name: 'Tteokbokki', price: 150, image: 'assets/tteokbokki.jpg', category: 'Mains', available: true }
+];
+fallbackProducts.push(...CATALOG_V34_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
@@ -528,6 +534,39 @@ async function synchronizeCatalogV33() {
   }
 }
 
+async function synchronizeCatalogV34() {
+  const markerRef = db.collection('settings').doc('catalog-v34-korean-mains');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const entries = await Promise.all(CATALOG_V34_ADDITIONS.map(async product => ({
+        product,
+        ref: db.collection('products').doc(product.id),
+        snapshot: await transaction.get(db.collection('products').doc(product.id))
+      })));
+      entries.forEach(({ product, ref, snapshot }) => {
+        if (!snapshot.exists) transaction.set(ref, {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to add the new Korean menu items.', error);
+    toast('Unable to add Fishcake and Tteokbokki. Please refresh and try again.');
+  }
+}
+
 function renderMenu() {
   const categoryProducts = products.filter(p => (p.category || 'Mains') === currentMenuCategory);
   $('#menu').innerHTML = categoryProducts.length ? categoryProducts.map(p => {
@@ -963,6 +1002,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV31();
     await restoreOriginalCatalogV32();
     await synchronizeCatalogV33();
+    await synchronizeCatalogV34();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
