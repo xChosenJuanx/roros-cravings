@@ -274,9 +274,12 @@ function startStoreStatusListener() {
 
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === id));
+  document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.view === id));
   $('#cartBtn').hidden = id !== 'shopView';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
 
 function isAdminUser(user = auth.currentUser) {
   return user?.email?.toLowerCase() === ADMIN_EMAIL;
@@ -822,6 +825,37 @@ $('#checkout').addEventListener('submit', async event => {
   } finally {
     button.disabled = false;
     button.textContent = 'Place Order';
+  }
+});
+
+$('#trackForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const id = $('#trackId').value.trim().toUpperCase();
+  const result = $('#trackResult');
+  result.hidden = false;
+  result.innerHTML = '<p class="loading">Checking order…</p>';
+  try {
+    const doc = await db.collection('tracking').doc(id).get();
+    if (!doc.exists) {
+      result.innerHTML = '<p class="error">Order ID not found. Please check the ID and try again.</p>';
+      return;
+    }
+    const data = doc.data();
+    const activeStatuses = STATUSES.slice(0, 5);
+    const step = activeStatuses.indexOf(data.status);
+    const cancelled = data.status === 'Cancelled';
+    result.innerHTML = `<h3>Order ${escapeHtml(id)}</h3>
+      <div class="statusBadge">${escapeHtml(data.status || 'Pending')}</div>
+      ${etaCountdownHtml(data)}
+      <div class="timeline">${cancelled
+        ? '<div class="timelineStep cancelled"><span></span>Cancelled</div>'
+        : activeStatuses.map((status, index) => `<div class="timelineStep ${index <= step ? 'done' : ''}"><span></span>${escapeHtml(status)}</div>`).join('')}
+      </div>
+      <p class="muted">Last updated: ${escapeHtml(timestampText(data.updatedAt))}</p>`;
+    updateEtaCountdowns();
+  } catch (error) {
+    console.error(error);
+    result.innerHTML = '<p class="error">Unable to check the order right now. Please try again.</p>';
   }
 });
 
