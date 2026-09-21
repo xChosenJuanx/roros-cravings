@@ -1,6 +1,6 @@
-const CACHE = 'roros-v25-korean-mains';
+const CACHE = 'roros-v26-app-download-qr';
 const ASSETS = [
-  './','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/gcash-qr.png',
+  './','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/gcash-qr.png','assets/app-download-qr.png',
   'assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png',
   'assets/kimbap.jpg','assets/jjajangbap.jpg','assets/jjajangmyeon.jpg','assets/fishcake-on-stick.jpg','assets/tteokbokki.jpg','assets/coke-sakto.jpg','assets/sprite-sakto.jpg','assets/royal-sakto.jpg','assets/coke-vanilla.jpg','assets/bottled-water.jpg','assets/coffee-jelly.jpg','assets/pineapple-juice.jpg',
   'assets/tocilog.jpg','assets/longsilog.jpg','assets/tapsilog.jpg','assets/hotsilog.jpg','assets/cornsilog.jpg','assets/chiksilog.jpg','assets/shangsilog.jpg'
