@@ -16,9 +16,9 @@ const BUSINESS_PHONE = '09456988833';
 const STATUSES = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const ORDER_TABS = ['Pending', 'Confirmed', 'Preparing', 'Out for Delivery', 'Completed', 'Cancelled'];
 const nativePlugins = window.Capacitor?.Plugins || {};
-const FirebaseAuthentication = nativePlugins.FirebaseAuthentication;
 const PushNotifications = nativePlugins.PushNotifications;
 let currentUser = null;
+let guestSignInPromise = null;
 let pushStartedForUid = null;
 let cachedOrders = [];
 let currentOrderFilter = 'Pending';
@@ -282,6 +282,16 @@ function isAdminUser(user = auth.currentUser) {
   return user?.email?.toLowerCase() === ADMIN_EMAIL;
 }
 
+async function ensureGuestSession() {
+  if (auth.currentUser) return auth.currentUser;
+  if (!guestSignInPromise) {
+    guestSignInPromise = auth.signInAnonymously()
+      .then(credential => credential.user)
+      .finally(() => { guestSignInPromise = null; });
+  }
+  return guestSignInPromise;
+}
+
 function chatReadKey(orderId) {
   return `roros-chat-read:${auth.currentUser?.uid || 'guest'}:${orderId}`;
 }
@@ -406,10 +416,10 @@ async function removeConversationFromInbox(orderId) {
   }
 }
 
-$('#messagesBtn').addEventListener('click', () => {
+$('#messagesBtn').addEventListener('click', async () => {
   if (!auth.currentUser) {
-    $('#customerDialog').showModal();
-    return toast('Please sign in to view your messages.');
+    try { await ensureGuestSession(); }
+    catch (error) { console.error(error); return toast('Unable to open messages. Check your internet and try again.'); }
   }
   renderConversationHub();
   $('#conversationDialog').showModal();
@@ -709,42 +719,6 @@ $('#shareLocationBtn').addEventListener('click', () => {
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
 });
 
-$('#customerOpen').addEventListener('click', () => $('#customerDialog').showModal());
-$('.closeCustomer').addEventListener('click', () => $('#customerDialog').close());
-$('#customerLogoutBtn').addEventListener('click', async () => {
-  await auth.signOut();
-  if (FirebaseAuthentication) await FirebaseAuthentication.signOut().catch(() => {});
-});
-
-$('#googleLoginBtn').addEventListener('click', async () => {
-  const button = $('#googleLoginBtn');
-  $('#customerLoginError').hidden = true;
-  button.disabled = true;
-  button.textContent = 'Signing in…';
-  try {
-    let credential;
-    if (FirebaseAuthentication) {
-      const result = await FirebaseAuthentication.signInWithGoogle();
-      const idToken = result.credential?.idToken;
-      const accessToken = result.credential?.accessToken;
-      if (!idToken) throw new Error('Google did not return a sign-in token.');
-      credential = firebase.auth.GoogleAuthProvider.credential(idToken, accessToken || null);
-      await auth.signInWithCredential(credential);
-    } else {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await auth.signInWithPopup(provider);
-    }
-    $('#customerDialog').close();
-  } catch (error) {
-    console.error(error);
-    $('#customerLoginError').textContent = error.message?.replace('Firebase: ', '') || 'Google sign-in failed.';
-    $('#customerLoginError').hidden = false;
-  } finally {
-    button.disabled = false;
-    button.textContent = 'G  Continue with Google';
-  }
-});
-
 async function registerPushFor(user) {
   if (!PushNotifications || !user || pushStartedForUid === user.uid) return;
   pushStartedForUid = user.uid;
@@ -789,11 +763,12 @@ $('#checkout').addEventListener('submit', async event => {
   if (storeStatus === 'Closed') return toast('The store is currently closed and cannot accept orders.');
   const t = totals();
   if (!t.quantity) return toast('Please add an item first.');
-  if (!auth.currentUser || auth.currentUser.email?.toLowerCase() === ADMIN_EMAIL) {
-    $('#cartDialog').close();
-    $('#customerDialog').showModal();
-    return toast('Please sign in with Google before ordering.');
+  let orderingUser = auth.currentUser;
+  if (!orderingUser) {
+    try { orderingUser = await ensureGuestSession(); }
+    catch (error) { console.error(error); return toast('Unable to start checkout. Check your internet and try again.'); }
   }
+  if (isAdminUser(orderingUser)) return toast('Please log out of Admin before placing a customer order.');
 
   const form = new FormData(event.target);
   const orderId = makeOrderId();
@@ -803,8 +778,8 @@ $('#checkout').addEventListener('submit', async event => {
   });
   const order = {
     orderId,
-    userId: auth.currentUser.uid,
-    customerEmail: auth.currentUser.email || '',
+    userId: orderingUser.uid,
+    customerEmail: '',
     customerName: String(form.get('name')).trim(),
     address: String(form.get('address')).trim(),
     contact: String(form.get('contact')).trim(),
@@ -862,8 +837,8 @@ function closeOrderChat() {
 
 async function openOrderChat(orderId) {
   if (!auth.currentUser) {
-    $('#customerDialog').showModal();
-    return toast('Please sign in before opening chat.');
+    try { await ensureGuestSession(); }
+    catch (error) { console.error(error); return toast('Unable to open chat. Check your internet and try again.'); }
   }
   if (unsubscribeChat) unsubscribeChat();
   if (unsubscribeChatOrder) unsubscribeChatOrder();
@@ -957,7 +932,7 @@ $('#chatForm').addEventListener('submit', async event => {
   }
 });
 
-$('#adminOpen').addEventListener('click', () => auth.currentUser ? showView('adminView') : $('#loginDialog').showModal());
+$('#adminOpen').addEventListener('click', () => isAdminUser() ? showView('adminView') : $('#loginDialog').showModal());
 $('.closeLogin').addEventListener('click', () => $('#loginDialog').close());
 $('#loginForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -976,12 +951,7 @@ $('#loginForm').addEventListener('submit', async event => {
 auth.onAuthStateChanged(async user => {
   currentUser = user;
   const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
-  $('#customerSignedOut').hidden = Boolean(user);
-  $('#customerSignedIn').hidden = !user;
-  $('#customerOpen').textContent = user ? (isAdmin ? 'Admin' : (user.displayName?.split(' ')[0] || 'Account')) : 'Sign in';
   if (user) {
-    $('#customerName').textContent = user.displayName || (isAdmin ? 'Administrator' : 'Customer');
-    $('#customerEmail').textContent = user.email || '';
     await db.collection('users').doc(user.uid).set({
       displayName: user.displayName || '',
       email: user.email || '',
@@ -994,6 +964,10 @@ auth.onAuthStateChanged(async user => {
   } else {
     pushStartedForUid = null;
     stopConversationHub();
+    ensureGuestSession().catch(error => {
+      console.error('Guest session failed', error);
+      toast('Guest checkout is temporarily unavailable. Please check your internet.');
+    });
   }
   if (isAdmin) {
     $('#adminEmail').textContent = user.email;
