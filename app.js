@@ -88,12 +88,12 @@ const CATALOG_V34_ADDITIONS = [
 fallbackProducts.push(...CATALOG_V34_ADDITIONS);
 
 const CATALOG_V35_BREAKFAST_ADDITIONS = [
-  { id: 'chosilog', name: 'Chosilog', price: 0, image: 'assets/chosilog.jpg', category: 'Breakfast Meals', available: true },
-  { id: 'waffle', name: 'Waffle', price: 0, image: 'assets/waffle.jpg', category: 'Breakfast Meals', available: true },
-  { id: 'adobosilog', name: 'AdoboSilog', price: 0, image: 'assets/adobosilog.jpg', category: 'Breakfast Meals', available: true, variants: ['Non-Spicy', 'Spicy'] }
+  { id: 'chosilog', name: 'Chosilog', price: 0, image: 'assets/chosilog.jpg', category: 'Silog Meals', available: true },
+  { id: 'waffle', name: 'Waffle', price: 0, image: 'assets/waffle.jpg', category: 'Silog Meals', available: true },
+  { id: 'adobosilog', name: 'AdoboSilog', price: 0, image: 'assets/adobosilog.jpg', category: 'Silog Meals', available: true, variants: ['Non-Spicy', 'Spicy'] }
 ];
 fallbackProducts.forEach(product => {
-  if (product.category === 'Silog Meals') product.category = 'Breakfast Meals';
+  if (product.category === 'Breakfast Meals') product.category = 'Silog Meals';
   if (product.id === 'hotsilog') product.variants = ['Beef', 'Beef w/ Cheese', 'Chicken'];
 });
 fallbackProducts.push(...CATALOG_V35_BREAKFAST_ADDITIONS);
@@ -104,10 +104,10 @@ const CATALOG_V37_ADDITIONS = [
 fallbackProducts.push(...CATALOG_V37_ADDITIONS);
 
 const CATALOG_V38_ADDITIONS = [
-  { id: 'spaghetti', name: 'Spaghetti', price: 0, image: 'assets/spaghetti.jpg', category: 'Pasta & Noodles', available: true },
-  { id: 'pancit-palabok', name: 'Pancit Palabok', price: 0, image: 'assets/pancit-palabok.jpg', category: 'Pasta & Noodles', available: true },
-  { id: 'buldak-black', name: 'Buldak (Hot Chicken Flavor Ramen) (Black)', price: 0, image: 'assets/buldak-black.jpg', category: 'Pasta & Noodles', available: true },
-  { id: 'kimchi-ramyeon', name: 'Kimchi Ramyeon', price: 0, image: 'assets/kimchi-ramyeon.jpg', category: 'Pasta & Noodles', available: true }
+  { id: 'spaghetti', name: 'Spaghetti', price: 0, image: 'assets/spaghetti.jpg', category: 'Snacks & More', available: true },
+  { id: 'pancit-palabok', name: 'Pancit Palabok', price: 0, image: 'assets/pancit-palabok.jpg', category: 'Snacks & More', available: true },
+  { id: 'buldak-black', name: 'Buldak (Hot Chicken Flavor Ramen) (Black)', price: 0, image: 'assets/buldak-black.jpg', category: 'Snacks & More', available: true },
+  { id: 'kimchi-ramyeon', name: 'Kimchi Ramyeon', price: 0, image: 'assets/kimchi-ramyeon.jpg', category: 'Snacks & More', available: true }
 ];
 fallbackProducts.push(...CATALOG_V38_ADDITIONS);
 
@@ -630,7 +630,7 @@ async function synchronizeCatalogV35() {
         const product = snapshot.data();
         if (product.category === 'Silog Meals') {
           transaction.set(snapshot.ref, {
-            category: 'Breakfast Meals',
+            category: 'Silog Meals',
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
           }, { merge: true });
         }
@@ -649,7 +649,7 @@ async function synchronizeCatalogV35() {
       });
 
       transaction.set(db.collection('products').doc('hotsilog'), {
-        category: 'Breakfast Meals',
+        category: 'Silog Meals',
         variants: ['Beef', 'Beef w/ Cheese', 'Chicken'],
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
@@ -658,10 +658,10 @@ async function synchronizeCatalogV35() {
         appliedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     });
-    toast('Breakfast Meals and product variants are ready.');
+    toast('Silog Meals and product variants are ready.');
   } catch (error) {
-    console.error('Unable to synchronize the Breakfast Meals catalog.', error);
-    toast('Unable to update Breakfast Meals. Please refresh and try again.');
+    console.error('Unable to synchronize the Silog Meals catalog.', error);
+    toast('Unable to update Silog Meals. Please refresh and try again.');
   }
 }
 
@@ -760,10 +760,10 @@ async function synchronizeCatalogV38() {
         appliedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     });
-    toast('Pasta & Noodles is ready. Add the prices in Menu Editor.');
+    toast('Snacks & More is ready. Add the prices in Menu Editor.');
   } catch (error) {
-    console.error('Unable to add Pasta & Noodles to the menu.', error);
-    toast('Unable to add Pasta & Noodles. Please refresh and try again.');
+    console.error('Unable to add Snacks & More to the menu.', error);
+    toast('Unable to add Snacks & More. Please refresh and try again.');
   }
 }
 
@@ -793,8 +793,8 @@ async function repairPastaNoodlesCatalogV40() {
       });
     });
   } catch (error) {
-    console.error('Unable to repair the Pasta & Noodles catalog.', error);
-    toast('Unable to load Pasta & Noodles. Please refresh and try again.');
+    console.error('Unable to repair the Snacks & More catalog.', error);
+    toast('Unable to load Snacks & More. Please refresh and try again.');
   }
 }
 
@@ -827,6 +827,36 @@ async function synchronizeDessertCatalogV41() {
   } catch (error) {
     console.error('Unable to add the Dessert menu.', error);
     toast('Unable to add the Dessert menu. Please refresh and try again.');
+  }
+}
+
+async function renameMenuCategoriesV42() {
+  const markerRef = db.collection('settings').doc('catalog-v42-category-renames');
+  try {
+    const marker = await markerRef.get();
+    if (marker.exists) return;
+    const existingProducts = await db.collection('products').get();
+    const batch = db.batch();
+    existingProducts.docs.forEach(snapshot => {
+      const category = snapshot.data().category;
+      if (category === 'Breakfast Meals') batch.set(snapshot.ref, {
+        category: 'Silog Meals',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      if (category === 'Pasta & Noodles') batch.set(snapshot.ref, {
+        category: 'Snacks & More',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+    batch.set(markerRef, {
+      applied: true,
+      appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await batch.commit();
+    toast('Menu categories have been updated.');
+  } catch (error) {
+    console.error('Unable to rename the menu categories.', error);
+    toast('Unable to update the menu categories. Please refresh and try again.');
   }
 }
 
@@ -1352,6 +1382,7 @@ auth.onAuthStateChanged(async user => {
     await repairKimchiRamyeonImageV39();
     await repairPastaNoodlesCatalogV40();
     await synchronizeDessertCatalogV41();
+    await renameMenuCategoriesV42();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
@@ -1775,8 +1806,8 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  const categoryOrder = ['Mains', 'Breakfast Meals', 'Pasta & Noodles', 'Dessert', 'Beverage', 'Sides'];
-  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', 'Pasta & Noodles': '🍝', Dessert: '🍨', Beverage: '🥤', Sides: '🍟' };
+  const categoryOrder = ['Mains', 'Silog Meals', 'Snacks & More', 'Dessert', 'Beverage', 'Sides'];
+  const categoryIcons = { Mains: '🍽️', 'Silog Meals': '🍳', 'Snacks & More': '🍜', Dessert: '🍨', Beverage: '🥤', Sides: '🍟' };
   const groupedProducts = products.reduce((groups, product) => {
     const category = product.category || 'Mains';
     if (!groups[category]) groups[category] = [];
