@@ -87,9 +87,21 @@ const CATALOG_V34_ADDITIONS = [
 ];
 fallbackProducts.push(...CATALOG_V34_ADDITIONS);
 
+const CATALOG_V35_BREAKFAST_ADDITIONS = [
+  { id: 'chosilog', name: 'Chosilog', price: 0, image: 'assets/chosilog.jpg', category: 'Breakfast Meals', available: true },
+  { id: 'waffle', name: 'Waffle', price: 0, image: 'assets/waffle.jpg', category: 'Breakfast Meals', available: true },
+  { id: 'adobosilog', name: 'AdoboSilog', price: 0, image: 'assets/adobosilog.jpg', category: 'Breakfast Meals', available: true, variants: ['Non-Spicy', 'Spicy'] }
+];
+fallbackProducts.forEach(product => {
+  if (product.category === 'Silog Meals') product.category = 'Breakfast Meals';
+  if (product.id === 'hotsilog') product.variants = ['Beef', 'Beef w/ Cheese', 'Chicken'];
+});
+fallbackProducts.push(...CATALOG_V35_BREAKFAST_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
+const menuVariantSelections = {};
 
 const $ = selector => document.querySelector(selector);
 const peso = n => '₱' + Number(n || 0).toLocaleString('en-PH');
@@ -580,6 +592,59 @@ async function synchronizeCatalogV34() {
   }
 }
 
+async function synchronizeCatalogV35() {
+  const markerRef = db.collection('settings').doc('catalog-v35-breakfast-meals');
+  try {
+    const markerSnapshot = await markerRef.get();
+    if (markerSnapshot.exists) return;
+    const existingProducts = await db.collection('products').get();
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const entries = await Promise.all(CATALOG_V35_BREAKFAST_ADDITIONS.map(async product => ({
+        product,
+        ref: db.collection('products').doc(product.id),
+        snapshot: await transaction.get(db.collection('products').doc(product.id))
+      })));
+      existingProducts.docs.forEach(snapshot => {
+        const product = snapshot.data();
+        if (product.category === 'Silog Meals') {
+          transaction.set(snapshot.ref, {
+            category: 'Breakfast Meals',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      });
+      entries.forEach(({ product, ref, snapshot }) => {
+        if (!snapshot.exists) transaction.set(ref, {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          variants: product.variants || [],
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      transaction.set(db.collection('products').doc('hotsilog'), {
+        category: 'Breakfast Meals',
+        variants: ['Beef', 'Beef w/ Cheese', 'Chicken'],
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    toast('Breakfast Meals and product variants are ready.');
+  } catch (error) {
+    console.error('Unable to synchronize the Breakfast Meals catalog.', error);
+    toast('Unable to update Breakfast Meals. Please refresh and try again.');
+  }
+}
+
 function renderMenu() {
   const categoryProducts = products.filter(p => (p.category || 'Mains') === currentMenuCategory);
   $('#menu').innerHTML = categoryProducts.length ? categoryProducts.map(p => {
@@ -592,10 +657,15 @@ function renderMenu() {
       <img src="${escapeHtml(safeImage(p.image))}" alt="${escapeHtml(p.name)}" onerror="this.src='assets/logo.png'">
       ${unavailable ? '<span class="unavailableBadge">Unavailable</span>' : ''}
       <div class="cardBody"><h3>${escapeHtml(p.name)}</h3><div class="price">${awaitingPrice ? 'Price coming soon' : peso(p.price)}</div>
+      ${Array.isArray(p.variants) && p.variants.length ? `<fieldset class="variantSelector"><legend>Choose one:</legend>${p.variants.map(variant => `<label class="variantBox"><input type="radio" name="variant-${escapeHtml(p.id)}" value="${escapeHtml(variant)}" ${menuVariantSelections[p.id] === variant ? 'checked' : ''}><span>${escapeHtml(variant)}</span></label>`).join('')}</fieldset>` : ''}
       <button class="add" data-add="${escapeHtml(p.id)}" ${disabled ? 'disabled' : ''}>${buttonText}</button></div>
     </article>`;
   }).join('') : '<p>No products in this category yet.</p>';
   document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => add(btn.dataset.add)));
+  document.querySelectorAll('.variantSelector input').forEach(input => input.addEventListener('change', () => {
+    const productId = input.name.replace(/^variant-/, '');
+    menuVariantSelections[productId] = input.value;
+  }));
 }
 document.querySelectorAll('[data-menu-category]').forEach(button => button.addEventListener('click', () => {
   currentMenuCategory = button.dataset.menuCategory;
@@ -606,19 +676,33 @@ document.querySelectorAll('[data-menu-category]').forEach(button => button.addEv
 function getProduct(id) { return products.find(p => p.id === id); }
 function getDeliveryFee() { return DIGOS_DELIVERY_FEE; }
 
+function cartKey(productId, variant = '') {
+  return variant ? `${productId}::${encodeURIComponent(variant)}` : productId;
+}
+
+function cartEntry(key) {
+  const separator = key.indexOf('::');
+  if (separator < 0) return { productId: key, variant: '' };
+  return { productId: key.slice(0, separator), variant: decodeURIComponent(key.slice(separator + 2)) };
+}
+
 function add(id) {
   if (storeStatus === 'Closed') return toast('The store is currently closed.');
   const product = getProduct(id);
   if (!product || product.available === false || Number(product.price || 0) <= 0) return toast('This item is currently unavailable.');
   if (!$('#orderSuccess').hidden) resetCheckoutForNewOrder();
-  cart[id] = (cart[id] || 0) + 1;
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const variant = variants.length ? menuVariantSelections[id] : '';
+  if (variants.length && !variant) return toast(`Please choose a ${product.name} variant first.`);
+  const key = cartKey(id, variant);
+  cart[key] = (cart[key] || 0) + 1;
   updateTotals();
   toast('Added to cart');
 }
 
-function change(id, amount) {
-  cart[id] = (cart[id] || 0) + amount;
-  if (cart[id] <= 0) delete cart[id];
+function change(key, amount) {
+  cart[key] = (cart[key] || 0) + amount;
+  if (cart[key] <= 0) delete cart[key];
   updateTotals();
   renderCart();
 }
@@ -626,8 +710,9 @@ function change(id, amount) {
 function totals() {
   let quantity = 0;
   let subtotal = 0;
-  Object.entries(cart).forEach(([id, qty]) => {
-    const product = getProduct(id);
+  Object.entries(cart).forEach(([key, qty]) => {
+    const { productId } = cartEntry(key);
+    const product = getProduct(productId);
     if (product) { quantity += qty; subtotal += Number(product.price) * qty; }
   });
   return { quantity, subtotal, delivery: subtotal ? getDeliveryFee() : 0 };
@@ -644,11 +729,13 @@ function updateTotals() {
 }
 
 function renderCart() {
-  const rows = Object.entries(cart).map(([id, qty]) => {
-    const p = getProduct(id);
+  const rows = Object.entries(cart).map(([key, qty]) => {
+    const { productId, variant } = cartEntry(key);
+    const p = getProduct(productId);
     if (!p) return '';
-    return `<div class="cartRow"><div><strong>${escapeHtml(p.name)}</strong><br><small>${peso(p.price)} each</small></div>
-      <div class="qty"><button data-change="${escapeHtml(id)}" data-delta="-1">−</button><b>${qty}</b><button data-change="${escapeHtml(id)}" data-delta="1">+</button></div></div>`;
+    const displayName = variant ? `${p.name} (${variant})` : p.name;
+    return `<div class="cartRow"><div><strong>${escapeHtml(displayName)}</strong><br><small>${peso(p.price)} each</small></div>
+      <div class="qty"><button data-change="${escapeHtml(key)}" data-delta="-1">−</button><b>${qty}</b><button data-change="${escapeHtml(key)}" data-delta="1">+</button></div></div>`;
   }).join('');
   $('#cartItems').innerHTML = rows || '<p>Your cart is empty.</p>';
   document.querySelectorAll('[data-change]').forEach(btn => btn.addEventListener('click', () => change(btn.dataset.change, Number(btn.dataset.delta))));
@@ -790,9 +877,10 @@ $('#checkout').addEventListener('submit', async event => {
 
   const form = new FormData(event.target);
   const orderId = makeOrderId();
-  const items = Object.entries(cart).map(([id, quantity]) => {
-    const p = getProduct(id);
-    return { productId: id, name: p.name, price: Number(p.price), quantity, lineTotal: Number(p.price) * quantity };
+  const items = Object.entries(cart).map(([key, quantity]) => {
+    const { productId, variant } = cartEntry(key);
+    const p = getProduct(productId);
+    return { productId, name: variant ? `${p.name} (${variant})` : p.name, variant, price: Number(p.price), quantity, lineTotal: Number(p.price) * quantity };
   });
   const order = {
     orderId,
@@ -1042,6 +1130,7 @@ auth.onAuthStateChanged(async user => {
     await restoreOriginalCatalogV32();
     await synchronizeCatalogV33();
     await synchronizeCatalogV34();
+    await synchronizeCatalogV35();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
@@ -1465,8 +1554,8 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  const categoryOrder = ['Mains', 'Silog Meals', 'Beverage', 'Sides'];
-  const categoryIcons = { Mains: '🍽️', 'Silog Meals': '🍳', Beverage: '🥤', Sides: '🍟' };
+  const categoryOrder = ['Mains', 'Breakfast Meals', 'Beverage', 'Sides'];
+  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', Beverage: '🥤', Sides: '🍟' };
   const groupedProducts = products.reduce((groups, product) => {
     const category = product.category || 'Mains';
     if (!groups[category]) groups[category] = [];
