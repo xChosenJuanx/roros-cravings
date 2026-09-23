@@ -98,6 +98,11 @@ fallbackProducts.forEach(product => {
 });
 fallbackProducts.push(...CATALOG_V35_BREAKFAST_ADDITIONS);
 
+const CATALOG_V37_ADDITIONS = [
+  { id: 'spam-musubi', name: 'Spam Musubi', price: 0, image: 'assets/spam-musubi.jpg', category: 'Mains', available: true }
+];
+fallbackProducts.push(...CATALOG_V37_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
@@ -684,6 +689,36 @@ async function repairBreakfastVariantsV36() {
   }
 }
 
+async function synchronizeCatalogV37() {
+  const markerRef = db.collection('settings').doc('catalog-v37-spam-musubi');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const product = CATALOG_V37_ADDITIONS[0];
+      const productRef = db.collection('products').doc(product.id);
+      const productSnapshot = await transaction.get(productRef);
+      if (!productSnapshot.exists) transaction.set(productRef, {
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        category: product.category,
+        available: product.available,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    toast('Spam Musubi is ready. Add its price in Menu Editor.');
+  } catch (error) {
+    console.error('Unable to add Spam Musubi to the menu.', error);
+    toast('Unable to add Spam Musubi. Please refresh and try again.');
+  }
+}
+
 function variantOptionsForProduct(product) {
   const normalizedName = String(product?.name || '').trim().toLowerCase();
   if (normalizedName === 'hotsilog') return ['Beef', 'Beef w/ Cheese', 'Chicken'];
@@ -1178,6 +1213,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV34();
     await synchronizeCatalogV35();
     await repairBreakfastVariantsV36();
+    await synchronizeCatalogV37();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
