@@ -111,6 +111,13 @@ const CATALOG_V38_ADDITIONS = [
 ];
 fallbackProducts.push(...CATALOG_V38_ADDITIONS);
 
+const CATALOG_V41_ADDITIONS = [
+  { id: 'buko-salad', name: 'Buko Salad', price: 0, image: 'assets/buko-salad.jpg', category: 'Dessert', available: true },
+  { id: 'buko-pandan', name: 'Buko Pandan', price: 0, image: 'assets/buko-pandan.jpg', category: 'Dessert', available: true },
+  { id: 'mango-float', name: 'Mango Float', price: 0, image: 'assets/mango-float.jpg', category: 'Dessert', available: true }
+];
+fallbackProducts.push(...CATALOG_V41_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
@@ -791,6 +798,38 @@ async function repairPastaNoodlesCatalogV40() {
   }
 }
 
+async function synchronizeDessertCatalogV41() {
+  const markerRef = db.collection('settings').doc('catalog-v41-desserts');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const productRefs = CATALOG_V41_ADDITIONS.map(product => db.collection('products').doc(product.id));
+      const productSnapshots = await Promise.all(productRefs.map(productRef => transaction.get(productRef)));
+      CATALOG_V41_ADDITIONS.forEach((product, index) => {
+        if (productSnapshots[index].exists) return;
+        transaction.set(productRefs[index], {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    toast('Dessert menu is ready. Add the prices in Menu Editor.');
+  } catch (error) {
+    console.error('Unable to add the Dessert menu.', error);
+    toast('Unable to add the Dessert menu. Please refresh and try again.');
+  }
+}
+
 async function repairKimchiRamyeonImageV39() {
   const markerRef = db.collection('settings').doc('catalog-v39-kimchi-image');
   try {
@@ -1312,6 +1351,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV38();
     await repairKimchiRamyeonImageV39();
     await repairPastaNoodlesCatalogV40();
+    await synchronizeDessertCatalogV41();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
@@ -1735,8 +1775,8 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  const categoryOrder = ['Mains', 'Breakfast Meals', 'Pasta & Noodles', 'Beverage', 'Sides'];
-  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', 'Pasta & Noodles': '🍝', Beverage: '🥤', Sides: '🍟' };
+  const categoryOrder = ['Mains', 'Breakfast Meals', 'Pasta & Noodles', 'Dessert', 'Beverage', 'Sides'];
+  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', 'Pasta & Noodles': '🍝', Dessert: '🍨', Beverage: '🥤', Sides: '🍟' };
   const groupedProducts = products.reduce((groups, product) => {
     const category = product.category || 'Mains';
     if (!groups[category]) groups[category] = [];
