@@ -43,6 +43,7 @@
       <div id="menuCategories" class="menuCategories" aria-label="Menu categories">
         <button class="menuCategory active" data-menu-category="Mains">🍽️ Mains</button>
         <button class="menuCategory" data-menu-category="Breakfast Meals">🍳 Breakfast Meals</button>
+        <button class="menuCategory" data-menu-category="Pasta & Noodles">🍝 Pasta & Noodles</button>
         <button class="menuCategory" data-menu-category="Beverage">🥤 Beverage</button>
         <button class="menuCategory" data-menu-category="Sides">🍟 Sides</button>
       </div>
@@ -105,7 +106,7 @@
             <input type="hidden" name="id">
             <input required name="name" placeholder="Food name">
             <input required name="price" type="number" min="1" step="1" placeholder="Price">
-            <select required name="category"><option value="Mains">Mains</option><option value="Breakfast Meals">Breakfast Meals</option><option value="Beverage">Beverage</option><option value="Sides">Sides</option></select>
+            <select required name="category"><option value="Mains">Mains</option><option value="Breakfast Meals">Breakfast Meals</option><option value="Pasta & Noodles">Pasta & Noodles</option><option value="Beverage">Beverage</option><option value="Sides">Sides</option></select>
             <input type="hidden" name="currentImage">
             <label class="galleryPicker"><span>📷 Choose Product Image from Gallery</span><input id="productImageFile" name="imageFile" type="file" accept="image/*"></label>
             <img id="productImagePreview" class="productImagePreview" src="assets/logo.png" alt="Product image preview">

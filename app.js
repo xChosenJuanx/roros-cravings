@@ -103,6 +103,14 @@ const CATALOG_V37_ADDITIONS = [
 ];
 fallbackProducts.push(...CATALOG_V37_ADDITIONS);
 
+const CATALOG_V38_ADDITIONS = [
+  { id: 'spaghetti', name: 'Spaghetti', price: 0, image: 'assets/spaghetti.jpg', category: 'Pasta & Noodles', available: true },
+  { id: 'pancit-palabok', name: 'Pancit Palabok', price: 0, image: 'assets/pancit-palabok.jpg', category: 'Pasta & Noodles', available: true },
+  { id: 'buldak-black', name: 'Buldak (Hot Chicken Flavor Ramen) (Black)', price: 0, image: 'assets/buldak-black.jpg', category: 'Pasta & Noodles', available: true },
+  { id: 'kimchi-ramyeon', name: 'Kimchi Ramyeon', price: 0, image: 'assets/logo.png', category: 'Pasta & Noodles', available: true }
+];
+fallbackProducts.push(...CATALOG_V38_ADDITIONS);
+
 const DIGOS_DELIVERY_FEE = 35;
 let products = [];
 const cart = {};
@@ -719,6 +727,37 @@ async function synchronizeCatalogV37() {
   }
 }
 
+async function synchronizeCatalogV38() {
+  const markerRef = db.collection('settings').doc('catalog-v38-pasta-noodles');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      for (const product of CATALOG_V38_ADDITIONS) {
+        const productRef = db.collection('products').doc(product.id);
+        const productSnapshot = await transaction.get(productRef);
+        if (!productSnapshot.exists) transaction.set(productRef, {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    toast('Pasta & Noodles is ready. Add the prices in Menu Editor.');
+  } catch (error) {
+    console.error('Unable to add Pasta & Noodles to the menu.', error);
+    toast('Unable to add Pasta & Noodles. Please refresh and try again.');
+  }
+}
+
 function variantOptionsForProduct(product) {
   const normalizedName = String(product?.name || '').trim().toLowerCase();
   if (normalizedName === 'hotsilog') return ['Beef', 'Beef w/ Cheese', 'Chicken'];
@@ -1214,6 +1253,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV35();
     await repairBreakfastVariantsV36();
     await synchronizeCatalogV37();
+    await synchronizeCatalogV38();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
@@ -1637,8 +1677,8 @@ async function deleteCompletedOrderChat(orderId, confirmed = false) {
 }
 
 function renderAdminProducts() {
-  const categoryOrder = ['Mains', 'Breakfast Meals', 'Beverage', 'Sides'];
-  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', Beverage: '🥤', Sides: '🍟' };
+  const categoryOrder = ['Mains', 'Breakfast Meals', 'Pasta & Noodles', 'Beverage', 'Sides'];
+  const categoryIcons = { Mains: '🍽️', 'Breakfast Meals': '🍳', 'Pasta & Noodles': '🍝', Beverage: '🥤', Sides: '🍟' };
   const groupedProducts = products.reduce((groups, product) => {
     const category = product.category || 'Mains';
     if (!groups[category]) groups[category] = [];
