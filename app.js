@@ -107,7 +107,7 @@ const CATALOG_V38_ADDITIONS = [
   { id: 'spaghetti', name: 'Spaghetti', price: 0, image: 'assets/spaghetti.jpg', category: 'Pasta & Noodles', available: true },
   { id: 'pancit-palabok', name: 'Pancit Palabok', price: 0, image: 'assets/pancit-palabok.jpg', category: 'Pasta & Noodles', available: true },
   { id: 'buldak-black', name: 'Buldak (Hot Chicken Flavor Ramen) (Black)', price: 0, image: 'assets/buldak-black.jpg', category: 'Pasta & Noodles', available: true },
-  { id: 'kimchi-ramyeon', name: 'Kimchi Ramyeon', price: 0, image: 'assets/logo.png', category: 'Pasta & Noodles', available: true }
+  { id: 'kimchi-ramyeon', name: 'Kimchi Ramyeon', price: 0, image: 'assets/kimchi-ramyeon.jpg', category: 'Pasta & Noodles', available: true }
 ];
 fallbackProducts.push(...CATALOG_V38_ADDITIONS);
 
@@ -758,6 +758,29 @@ async function synchronizeCatalogV38() {
   }
 }
 
+async function repairKimchiRamyeonImageV39() {
+  const markerRef = db.collection('settings').doc('catalog-v39-kimchi-image');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const productRef = db.collection('products').doc('kimchi-ramyeon');
+      const productSnapshot = await transaction.get(productRef);
+      if (productSnapshot.exists) transaction.set(productRef, {
+        image: 'assets/kimchi-ramyeon.jpg',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to update the Kimchi Ramyeon image.', error);
+    toast('Unable to update the Kimchi Ramyeon image. Please refresh and try again.');
+  }
+}
+
 function variantOptionsForProduct(product) {
   const normalizedName = String(product?.name || '').trim().toLowerCase();
   if (normalizedName === 'hotsilog') return ['Beef', 'Beef w/ Cheese', 'Chicken'];
@@ -1254,6 +1277,7 @@ auth.onAuthStateChanged(async user => {
     await repairBreakfastVariantsV36();
     await synchronizeCatalogV37();
     await synchronizeCatalogV38();
+    await repairKimchiRamyeonImageV39();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
