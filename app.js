@@ -733,9 +733,11 @@ async function synchronizeCatalogV38() {
     await db.runTransaction(async transaction => {
       const marker = await transaction.get(markerRef);
       if (marker.exists) return;
-      for (const product of CATALOG_V38_ADDITIONS) {
-        const productRef = db.collection('products').doc(product.id);
-        const productSnapshot = await transaction.get(productRef);
+      const productRefs = CATALOG_V38_ADDITIONS.map(product => db.collection('products').doc(product.id));
+      const productSnapshots = await Promise.all(productRefs.map(productRef => transaction.get(productRef)));
+      CATALOG_V38_ADDITIONS.forEach((product, index) => {
+        const productRef = productRefs[index];
+        const productSnapshot = productSnapshots[index];
         if (!productSnapshot.exists) transaction.set(productRef, {
           name: product.name,
           price: product.price,
@@ -745,7 +747,7 @@ async function synchronizeCatalogV38() {
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         });
-      }
+      });
       transaction.set(markerRef, {
         applied: true,
         appliedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -755,6 +757,37 @@ async function synchronizeCatalogV38() {
   } catch (error) {
     console.error('Unable to add Pasta & Noodles to the menu.', error);
     toast('Unable to add Pasta & Noodles. Please refresh and try again.');
+  }
+}
+
+async function repairPastaNoodlesCatalogV40() {
+  const markerRef = db.collection('settings').doc('catalog-v40-pasta-noodles-repair');
+  try {
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      const productRefs = CATALOG_V38_ADDITIONS.map(product => db.collection('products').doc(product.id));
+      const productSnapshots = await Promise.all(productRefs.map(productRef => transaction.get(productRef)));
+      CATALOG_V38_ADDITIONS.forEach((product, index) => {
+        if (productSnapshots[index].exists) return;
+        transaction.set(productRefs[index], {
+          name: product.name,
+          price: product.price,
+          image: product.image,
+          category: product.category,
+          available: product.available,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to repair the Pasta & Noodles catalog.', error);
+    toast('Unable to load Pasta & Noodles. Please refresh and try again.');
   }
 }
 
@@ -1278,6 +1311,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV37();
     await synchronizeCatalogV38();
     await repairKimchiRamyeonImageV39();
+    await repairPastaNoodlesCatalogV40();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();

@@ -1,4 +1,4 @@
-const CACHE = 'roros-v39-kimchi-image';
+const CACHE = 'roros-v40-pasta-noodles-repair';
 const ASSETS = [
   './','index.html','style.css','app.js','manifest.json','assets/logo.png','assets/gcash-qr.png','assets/app-download-qr.png',
   'assets/samgyup.png','assets/soy-garlic.png','assets/shawarma.png','assets/donkatsu.png','assets/bibimbap.png','assets/gochujang.png','assets/chick-fries.png',
