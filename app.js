@@ -645,6 +645,52 @@ async function synchronizeCatalogV35() {
   }
 }
 
+async function repairBreakfastVariantsV36() {
+  const markerRef = db.collection('settings').doc('catalog-v36-repair-breakfast-variants');
+  try {
+    const markerSnapshot = await markerRef.get();
+    if (markerSnapshot.exists) return;
+    const existingProducts = await db.collection('products').get();
+    await db.runTransaction(async transaction => {
+      const marker = await transaction.get(markerRef);
+      if (marker.exists) return;
+      existingProducts.docs.forEach(snapshot => {
+        const normalizedName = String(snapshot.data().name || '').trim().toLowerCase();
+        if (normalizedName === 'hotsilog') {
+          transaction.set(snapshot.ref, {
+            variants: ['Beef', 'Beef w/ Cheese', 'Chicken'],
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        } else if (normalizedName === 'adobosilog') {
+          transaction.set(snapshot.ref, {
+            variants: ['Non-Spicy', 'Spicy'],
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        } else if (Array.isArray(snapshot.data().variants) && snapshot.data().variants.length) {
+          transaction.set(snapshot.ref, {
+            variants: firebase.firestore.FieldValue.delete(),
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+      });
+      transaction.set(markerRef, {
+        applied: true,
+        appliedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  } catch (error) {
+    console.error('Unable to repair Breakfast Meal variants.', error);
+    toast('Unable to repair the Breakfast Meal choices. Please refresh and try again.');
+  }
+}
+
+function variantOptionsForProduct(product) {
+  const normalizedName = String(product?.name || '').trim().toLowerCase();
+  if (normalizedName === 'hotsilog') return ['Beef', 'Beef w/ Cheese', 'Chicken'];
+  if (normalizedName === 'adobosilog') return ['Non-Spicy', 'Spicy'];
+  return [];
+}
+
 function renderMenu() {
   const categoryProducts = products.filter(p => (p.category || 'Mains') === currentMenuCategory);
   $('#menu').innerHTML = categoryProducts.length ? categoryProducts.map(p => {
@@ -657,7 +703,7 @@ function renderMenu() {
       <img src="${escapeHtml(safeImage(p.image))}" alt="${escapeHtml(p.name)}" onerror="this.src='assets/logo.png'">
       ${unavailable ? '<span class="unavailableBadge">Unavailable</span>' : ''}
       <div class="cardBody"><h3>${escapeHtml(p.name)}</h3><div class="price">${awaitingPrice ? 'Price coming soon' : peso(p.price)}</div>
-      ${Array.isArray(p.variants) && p.variants.length ? `<fieldset class="variantSelector"><legend>Choose one:</legend>${p.variants.map(variant => `<label class="variantBox"><input type="radio" name="variant-${escapeHtml(p.id)}" value="${escapeHtml(variant)}" ${menuVariantSelections[p.id] === variant ? 'checked' : ''}><span>${escapeHtml(variant)}</span></label>`).join('')}</fieldset>` : ''}
+      ${variantOptionsForProduct(p).length ? `<fieldset class="variantSelector"><legend>Choose one:</legend>${variantOptionsForProduct(p).map(variant => `<label class="variantBox"><input type="radio" name="variant-${escapeHtml(p.id)}" value="${escapeHtml(variant)}" ${menuVariantSelections[p.id] === variant ? 'checked' : ''}><span>${escapeHtml(variant)}</span></label>`).join('')}</fieldset>` : ''}
       <button class="add" data-add="${escapeHtml(p.id)}" ${disabled ? 'disabled' : ''}>${buttonText}</button></div>
     </article>`;
   }).join('') : '<p>No products in this category yet.</p>';
@@ -691,7 +737,7 @@ function add(id) {
   const product = getProduct(id);
   if (!product || product.available === false || Number(product.price || 0) <= 0) return toast('This item is currently unavailable.');
   if (!$('#orderSuccess').hidden) resetCheckoutForNewOrder();
-  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const variants = variantOptionsForProduct(product);
   const variant = variants.length ? menuVariantSelections[id] : '';
   if (variants.length && !variant) return toast(`Please choose a ${product.name} variant first.`);
   const key = cartKey(id, variant);
@@ -1131,6 +1177,7 @@ auth.onAuthStateChanged(async user => {
     await synchronizeCatalogV33();
     await synchronizeCatalogV34();
     await synchronizeCatalogV35();
+    await repairBreakfastVariantsV36();
     loadProducts();
   } else if ($('#adminView').classList.contains('active')) {
     stopAdminOrderUpdates();
